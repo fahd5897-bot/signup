@@ -1,0 +1,167 @@
+"""POST /upload-document contract.
+
+Covers the validation gate specifically: everything rejected here is something
+that would otherwise reach the parser, and several of them (a truncated PDF, a
+mislabelled file) parse "successfully" into partial or wrong content.
+"""
+
+from __future__ import annotations
+
+import uuid
+
+import httpx
+import jwt
+import pytest
+from app.api.middleware.error_handler import register_exception_handlers
+from app.api.v1.routers import documents as documents_router
+from app.services import storage
+from fastapi import FastAPI
+
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@pytest.fixture
+def xlsx_bytes(tmp_path) -> bytes:
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    workbook.active.append(["البند", "السعر"])
+    path = tmp_path / "b.xlsx"
+    workbook.save(path)
+    return path.read_bytes()
+
+
+@pytest.fixture
+def client(monkeypatch, settings) -> httpx.AsyncClient:
+    class _FakeStorage:
+        def __init__(self, *args, **kwargs) -> None: ...
+
+        def put(self, key, data, *, content_type):
+            return storage.StoredObject(key, len(data), storage.sha256_bytes(data))
+
+    monkeypatch.setattr(documents_router, "ObjectStorage", _FakeStorage)
+
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(documents_router.router, prefix="/api/v1")
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+
+def _token(settings, role: str = "bid_manager") -> dict[str, str]:
+    payload = {
+        "sub": str(uuid.uuid4()),
+        "tid": str(uuid.uuid4()),
+        "email": "user@example.com",
+        "role": role,
+    }
+    encoded = jwt.encode(payload, settings.jwt_secret.get_secret_value(), algorithm="HS256")
+    return {"Authorization": f"Bearer {encoded}"}
+
+
+async def test_accepts_upload_and_returns_poll_url(client, settings, xlsx_bytes) -> None:
+    async with client:
+        response = await client.post(
+            "/api/v1/upload-document",
+            headers=_token(settings),
+            files={"file": ("كراسة الشروط.xlsx", xlsx_bytes, XLSX_MIME)},
+            data={"role": "knowledge_base"},
+        )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "uploaded"
+    assert body["poll_url"].endswith("/status")
+
+
+@pytest.mark.parametrize(
+    ("header_role", "expected"),
+    [("bid_manager", 202), ("owner", 202), ("sme", 202), ("viewer", 403)],
+)
+async def test_role_gates_upload(client, settings, xlsx_bytes, header_role, expected) -> None:
+    async with client:
+        response = await client.post(
+            "/api/v1/upload-document",
+            headers=_token(settings, header_role),
+            files={"file": ("a.xlsx", xlsx_bytes, XLSX_MIME)},
+            data={"role": "knowledge_base"},
+        )
+    assert response.status_code == expected
+
+
+@pytest.mark.parametrize("auth", [{}, {"Authorization": "Bearer nonsense"}])
+async def test_rejects_missing_or_invalid_token(client, xlsx_bytes, auth) -> None:
+    async with client:
+        response = await client.post(
+            "/api/v1/upload-document",
+            headers=auth,
+            files={"file": ("a.xlsx", xlsx_bytes, XLSX_MIME)},
+            data={"role": "knowledge_base"},
+        )
+    assert response.status_code == 401
+    assert response.json()["type"] == "unauthenticated"
+
+
+async def test_rejects_disallowed_content_type(client, settings) -> None:
+    async with client:
+        response = await client.post(
+            "/api/v1/upload-document",
+            headers=_token(settings),
+            files={"file": ("virus.exe", b"MZ\x90\x00" * 20, "application/x-msdownload")},
+            data={"role": "knowledge_base"},
+        )
+    assert response.status_code == 415
+    assert response.json()["type"] == "unsupported_format"
+
+
+async def test_rejects_bytes_contradicting_declared_type(client, settings) -> None:
+    """A file labelled PDF whose bytes are not a PDF is broken or hostile."""
+    async with client:
+        response = await client.post(
+            "/api/v1/upload-document",
+            headers=_token(settings),
+            files={"file": ("fake.pdf", b"this is not a pdf", "application/pdf")},
+            data={"role": "knowledge_base"},
+        )
+    assert response.status_code == 415
+
+
+async def test_rejects_checksum_mismatch(client, settings, xlsx_bytes) -> None:
+    """A truncated upload parses into partial text, and nothing downstream can
+    tell the document is incomplete.
+    """
+    async with client:
+        response = await client.post(
+            "/api/v1/upload-document",
+            headers=_token(settings),
+            files={"file": ("a.xlsx", xlsx_bytes, XLSX_MIME)},
+            data={"role": "knowledge_base", "expected_sha256": "0" * 64},
+        )
+    assert response.status_code == 400
+    assert response.json()["type"] == "checksum_mismatch"
+
+
+async def test_accepts_matching_checksum(client, settings, xlsx_bytes) -> None:
+    async with client:
+        response = await client.post(
+            "/api/v1/upload-document",
+            headers=_token(settings),
+            files={"file": ("a.xlsx", xlsx_bytes, XLSX_MIME)},
+            data={
+                "role": "tender",
+                "expected_sha256": storage.sha256_bytes(xlsx_bytes),
+            },
+        )
+    assert response.status_code == 202
+
+
+async def test_storage_key_is_tenant_prefixed_and_filename_safe() -> None:
+    key = storage.build_storage_key("t-1", "d-9", "../../etc/passwd")
+    assert key.startswith("t-1/d-9/")
+    # The property that matters is that no path separator survives into the
+    # filename segment, so nothing can escape the tenant prefix. Literal dots
+    # are harmless once "/" is gone.
+    assert "/" not in key.split("/", 2)[2]
+    assert "\\" not in key
+
+    # Arabic filenames must survive intact — mangling them would make every
+    # document unrecognisable to the customer who uploaded it.
+    assert storage.build_storage_key("t", "d", "كراسة.pdf").endswith("كراسة.pdf")

@@ -5,7 +5,21 @@ src = ["app", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "ASYNC", "S", "T20"]
-ignore = ["S101"]
+ignore = ["S101"]  # assert is the point of a test file
+
+[tool.ruff.lint.flake8-bugbear]
+# B008 flags function calls in argument defaults. FastAPI's entire dependency
+# system is built on exactly that, so these are declared immutable rather than
+# suppressed with per-line noqa across every route signature.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+]
 
 [tool.mypy]
 python_version = "3.12"

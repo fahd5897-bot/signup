@@ -52,6 +52,19 @@ class Settings(BaseSettings):
     abstain_on_ungrounded: bool = True
     require_human_approval: bool = True
 
+    # -------------------------------------------------------- object storage
+    s3_endpoint: str | None = None  # None => real AWS S3
+    s3_bucket: str = "rfp-documents"
+    s3_access_key: SecretStr = SecretStr("")
+    s3_secret_key: SecretStr = SecretStr("")
+
+    # ------------------------------------------------------------- ingestion
+    #: Requests above this stream to object storage via a presigned URL instead
+    #: of transiting the API process.
+    max_direct_upload_bytes: int = 25 * 1024 * 1024
+    max_upload_bytes: int = 200 * 1024 * 1024
+    ingest_max_retries: int = 3
+
     # -------------------------------------------------------------------- app
     jwt_secret: SecretStr
     jwt_algorithm: str = "HS256"
