@@ -1,0 +1,80 @@
+# ============================================================================
+#  RFP/RFQ/Tender Response Platform — Backend (Python 3.12)
+#  All versions verified against PyPI. Pinned exactly for reproducible builds.
+#  Regenerate lockfile with:  pip-compile requirements.txt -o requirements.lock
+# ============================================================================
+
+# ---------------------------------------------------------------- Web layer
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+python-multipart==0.0.32          # multipart/form-data document uploads
+slowapi==0.1.10                   # per-tenant rate limiting
+orjson==3.12.0                    # fast JSON serialisation (UTF-8/Arabic safe)
+
+# --------------------------------------------------------- Config & schemas
+pydantic==2.13.4
+pydantic-settings==2.15.0
+email-validator==2.3.0
+
+# ------------------------------------------------------- Auth & multitenancy
+pyjwt[crypto]==2.13.0
+authlib==1.7.2                    # OIDC / SSO for enterprise tenants
+passlib[argon2]==1.7.4
+argon2-cffi==25.1.0
+
+# -------------------------------------------------- PostgreSQL (metadata/RLS)
+sqlalchemy[asyncio]==2.0.52
+alembic==1.19.1
+asyncpg==0.31.0                   # async driver used by the app
+psycopg[binary]==3.3.4            # sync driver used by Alembic + workers
+
+# ------------------------------------------------------ Vector DB (Qdrant)
+qdrant-client[fastembed]==1.19.0
+fastembed==0.8.0                  # local sparse (BM25/miniCOIL) vectors
+
+# ----------------------------------------------------------- LLM & RAG core
+# NOTE: LangChain 1.x is a breaking rewrite vs 0.x — see docs/ADR-0002.
+langchain==1.3.15
+langchain-core==1.5.6
+langchain-anthropic==1.5.6
+langchain-qdrant==1.1.0
+langchain-text-splitters==1.1.2
+anthropic==0.122.0                # used directly for native citations + caching
+voyageai==0.5.0                   # multilingual embeddings + reranker
+rank-bm25==0.2.2                  # in-process lexical fallback / eval baseline
+tiktoken==0.14.0                  # approximate budgeting only (see ADR-0004)
+
+# --------------------------------------------- Parsing (Arabic PDF + tables)
+unstructured[all-docs]==0.25.2
+pymupdf==1.28.2                   # fast text/layout probe, RTL span ordering
+pdf2image==1.17.0                 # rasterise scanned pages for OCR
+pytesseract==0.3.13               # requires system tesseract-ocr + ara traineddata
+arabic-reshaper==3.0.1            # presentation-form -> logical-form repair
+python-bidi==0.6.11               # Unicode BiDi reordering
+camel-tools==1.6.0                # Arabic normalisation, dediacritisation
+
+# --------------------------------------------------------- Async processing
+celery[redis]==5.6.3
+redis==8.1.0
+flower==2.1.0
+tenacity==9.1.4                   # retry/backoff for LLM + parser calls
+
+# ---------------------------------------------------------- Object storage
+boto3==1.43.73                    # S3 / any S3-compatible store
+minio==7.2.20                     # local dev object store
+
+# ------------------------------------------------------ Document generation
+python-docx==1.2.0
+docxtpl==0.20.2                   # tenant-branded response templates
+weasyprint==69.0                  # HTML -> PDF, RTL aware
+
+# ------------------------------------------------- Compliance & observability
+presidio-analyzer==2.2.364        # PII detection before egress to the LLM
+structlog==26.1.0
+sentry-sdk[fastapi]==2.68.0
+opentelemetry-sdk==1.44.0
+langfuse==4.14.4                  # LLM tracing, groundedness scoring, eval runs
+prometheus-fastapi-instrumentator==8.1.0
+
+# --------------------------------------------------------------- HTTP client
+httpx==0.28.1
