@@ -19,7 +19,7 @@ from app.api.middleware.error_handler import (
     ExceptionToResponseMiddleware,
     register_exception_handlers,
 )
-from app.api.v1.routers import documents, generation
+from app.api.v1.routers import auth, documents, generation
 from app.core.config import get_settings
 from app.rag.vectorstore.collections import QdrantCollectionManager, build_client
 
@@ -46,7 +46,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        from app.db.session import dispose_engine
+
         await app.state.qdrant.close()
+        await dispose_engine()
 
 
 def create_app() -> FastAPI:
@@ -68,6 +71,7 @@ def create_app() -> FastAPI:
     _configure_cors(app, settings)
 
     register_exception_handlers(app)
+    app.include_router(auth.router, prefix="/api/v1")
     app.include_router(documents.router, prefix="/api/v1")
     app.include_router(generation.router, prefix="/api/v1")
     return app

@@ -5,26 +5,27 @@ from __future__ import annotations
 import uuid
 
 import httpx
-import jwt
 import pytest
 from app.api.middleware.error_handler import register_exception_handlers
 from app.api.v1.routers import generation as generation_router
 from app.db.models.enums import GroundingVerdict, Language, ProposalStatus
 from app.rag.chains.answer_requirement import AnswerResult
 from app.schemas.proposal import Citation
+from app.security.tokens import issue_access_token
 from fastapi import FastAPI
 
 
-def _token(settings, role: str = "bid_manager") -> dict[str, str]:
-    encoded = jwt.encode(
-        {
-            "sub": str(uuid.uuid4()),
-            "tid": str(uuid.uuid4()),
-            "email": "bid@example.com",
-            "role": role,
-        },
-        settings.jwt_secret.get_secret_value(),
-        algorithm="HS256",
+def _token(
+    settings, role: str = "bid_manager", tenant_id: uuid.UUID | None = None
+) -> dict[str, str]:
+    """Mint through the production issuer so the token carries every claim
+    the verifier requires, including `typ`."""
+    encoded, _ = issue_access_token(
+        user_id=uuid.uuid4(),
+        tenant_id=tenant_id or uuid.uuid4(),
+        email="bid@example.com",
+        role=role,
+        settings=settings,
     )
     return {"Authorization": f"Bearer {encoded}"}
 
@@ -129,14 +130,9 @@ async def test_abstention_carries_reason_and_no_answer(monkeypatch, settings):
 async def test_tenant_id_comes_from_token_not_body(monkeypatch, settings, answered):
     """A caller must not be able to name someone else's tenant."""
     client, chain = _client(monkeypatch, answered)
-    headers = _token(settings)
-    token_tenant = uuid.UUID(
-        jwt.decode(
-            headers["Authorization"].split()[1],
-            settings.jwt_secret.get_secret_value(),
-            algorithms=["HS256"],
-        )["tid"]
-    )
+    # Known up front, so the assertion needs no token decoding.
+    token_tenant = uuid.uuid4()
+    headers = _token(settings, tenant_id=token_tenant)
     attacker_tenant = str(uuid.uuid4())
 
     async with client:

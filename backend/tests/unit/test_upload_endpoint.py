@@ -10,10 +10,10 @@ from __future__ import annotations
 import uuid
 
 import httpx
-import jwt
 import pytest
 from app.api.middleware.error_handler import register_exception_handlers
 from app.api.v1.routers import documents as documents_router
+from app.security.tokens import issue_access_token
 from app.services import storage
 from fastapi import FastAPI
 
@@ -48,13 +48,18 @@ def client(monkeypatch, settings) -> httpx.AsyncClient:
 
 
 def _token(settings, role: str = "bid_manager") -> dict[str, str]:
-    payload = {
-        "sub": str(uuid.uuid4()),
-        "tid": str(uuid.uuid4()),
-        "email": "user@example.com",
-        "role": role,
-    }
-    encoded = jwt.encode(payload, settings.jwt_secret.get_secret_value(), algorithm="HS256")
+    """Mint through the production issuer, not by hand.
+
+    A hand-rolled payload silently omits the `typ` claim the verifier requires,
+    so the tests would pass against a token shape the app never issues.
+    """
+    encoded, _ = issue_access_token(
+        user_id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        email="user@example.com",
+        role=role,
+        settings=settings,
+    )
     return {"Authorization": f"Bearer {encoded}"}
 
 

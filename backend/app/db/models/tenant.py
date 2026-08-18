@@ -72,6 +72,8 @@ class Tenant(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     workspaces: Mapped[list[Workspace]] = relationship(
         back_populates="tenant", cascade="all, delete-orphan", passive_deletes=True
     )
-    documents: Mapped[list[Document]] = relationship(
-        back_populates="tenant", cascade="all, delete-orphan", passive_deletes=True
-    )
+    #: Read-only. A document's ownership is written through its workspace (or
+    #: left null for tenant-wide knowledge), so exposing a second writable path
+    #: to the same foreign key would let two relationships disagree about who
+    #: owns the row. Deletion still cascades via the database constraint.
+    documents: Mapped[list[Document]] = relationship(back_populates="tenant", viewonly=True)

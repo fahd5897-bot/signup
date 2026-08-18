@@ -12,6 +12,8 @@ from typing import Annotated, Literal
 from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from app.core.models import ALLOWED_MODELS, MODEL_EXTRACTION, MODEL_GENERATION
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -24,8 +26,9 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------------------- LLM
     anthropic_api_key: SecretStr
-    llm_model_generation: str = "claude-opus-5"
-    llm_model_classify: str = "claude-haiku-4-5"
+    #: Defaults come from app.core.models; overridable per environment.
+    llm_model_generation: str = MODEL_GENERATION
+    llm_model_classify: str = MODEL_EXTRACTION
     llm_effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
     llm_max_tokens: int = 64_000
 
@@ -95,6 +98,45 @@ class Settings(BaseSettings):
     access_token_ttl_seconds: int = 900
     default_locale: Literal["en", "ar"] = "en"
     supported_locales: Annotated[list[str], NoDecode] = ["en", "ar"]
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _strong_jwt_secret(cls, v: SecretStr) -> SecretStr:
+        """Refuse a signing key shorter than the hash it feeds.
+
+        HS256 keys below 32 bytes weaken the signature (RFC 7518 §3.2), and a
+        forgeable access token is a total authentication bypass — the tenant
+        and role live in that token. Failing at startup is the only place this
+        is cheap to catch; in production it is silent.
+
+        Generate one with: ``python -c "import secrets;
+        print(secrets.token_urlsafe(48))"``
+        """
+        secret = v.get_secret_value()
+        if len(secret.encode()) < 32:
+            raise ValueError(
+                "JWT_SECRET must be at least 32 bytes. Generate one with: "
+                'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        if secret in {"change-me", "secret", "changeme"}:
+            raise ValueError("JWT_SECRET is still the placeholder value")
+        return v
+
+    @field_validator("llm_model_generation", "llm_model_classify")
+    @classmethod
+    def _known_model(cls, v: str) -> str:
+        """Reject an unknown model ID at startup.
+
+        Without this the process boots happily and the first generation call —
+        possibly hours into a deployment — fails with a 404 from the API.
+        """
+        if v not in ALLOWED_MODELS:
+            raise ValueError(
+                f"unknown model {v!r}; allowed: {sorted(ALLOWED_MODELS)}. "
+                "Add it to app/core/models.py after checking it against the "
+                "current Anthropic model list."
+            )
+        return v
 
     @field_validator("supported_locales", mode="before")
     @classmethod

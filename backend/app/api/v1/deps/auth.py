@@ -11,12 +11,12 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-import jwt
-from fastapi import Depends, Header
+from fastapi import Cookie, Depends, Header
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import PermissionDeniedError
 from app.db.models.enums import UserRole
+from app.security.tokens import InvalidTokenError, decode_token
 
 
 @dataclass(slots=True, frozen=True)
@@ -45,33 +45,49 @@ class AuthenticationError(PermissionDeniedError):
 
 async def get_current_user(
     authorization: str = Header(default=""),
+    access_token: str | None = Cookie(default=None),
     settings: Settings = Depends(get_settings),
 ) -> CurrentUser:
-    """Decode and verify the bearer token."""
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise AuthenticationError("missing bearer token")
+    """Resolve the caller from an Authorization header or an httpOnly cookie.
+
+    **The header wins.** An explicitly presented credential must take
+    precedence over an ambient one: if a client sends a bearer token while a
+    session cookie happens to be attached, silently honouring the cookie makes
+    the request act as the wrong principal — a confused deputy, and one that is
+    invisible in logs because the request looked authorised either way.
+
+    The cookie is the browser path (httpOnly, so an XSS cannot read it); the
+    header serves clients with no cookie jar — the CLI, tests, a future mobile
+    app.
+
+    Only an **access** token is accepted. `decode_token` enforces the type:
+    without that check a month-long refresh token would authorise every
+    request, silently turning a 15-minute credential into a 30-day one.
+    """
+    token: str | None = None
+    scheme, _, header_token = authorization.partition(" ")
+    if scheme.lower() == "bearer" and header_token:
+        token = header_token
+    elif access_token:
+        token = access_token
+
+    if not token:
+        raise AuthenticationError("no credentials supplied")
 
     try:
-        claims = jwt.decode(
-            token,
-            settings.jwt_secret.get_secret_value(),
-            algorithms=[settings.jwt_algorithm],
-        )
-    except jwt.ExpiredSignatureError as exc:
-        raise AuthenticationError("token has expired") from exc
-    except jwt.InvalidTokenError as exc:
-        raise AuthenticationError("invalid token") from exc
+        claims = decode_token(token, expected_type="access", settings=settings)
+    except InvalidTokenError as exc:
+        raise AuthenticationError(exc.detail) from exc
 
     try:
         return CurrentUser(
-            id=uuid.UUID(claims["sub"]),
-            tenant_id=uuid.UUID(claims["tid"]),
-            email=claims["email"],
-            role=UserRole(claims["role"]),
+            id=claims.user_id,
+            tenant_id=claims.tenant_id,
+            email=claims.email,
+            role=UserRole(claims.role),
         )
-    except (KeyError, ValueError) as exc:
-        raise AuthenticationError("token is missing required claims") from exc
+    except ValueError as exc:
+        raise AuthenticationError("token carries an unknown role") from exc
 
 
 def require_upload_permission(
