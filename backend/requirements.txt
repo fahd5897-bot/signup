@@ -45,7 +45,13 @@ rank-bm25==0.2.2                  # in-process lexical fallback / eval baseline
 tiktoken==0.14.0                  # approximate budgeting only (see ADR-0004)
 
 # --------------------------------------------- Parsing (Arabic PDF + tables)
-unstructured[all-docs]==0.25.2
+# Extras are the exact formats ALLOWED_MIME_TYPES accepts, not `all-docs`.
+# `all-docs` also pulls the `audio` extra, whose openai-whisper ships only an
+# sdist whose setup.py imports pkg_resources — removed from setuptools 81 — so
+# the install fails outright on Python 3.12. It cannot be built in CI and it
+# cannot be built in the runtime image, for a format this product never
+# accepts. Adding a format here means adding it to ALLOWED_MIME_TYPES too.
+unstructured[pdf,docx,doc,xlsx,pptx,csv]==0.25.2
 pymupdf==1.28.2                   # fast text/layout probe, RTL span ordering
 pdf2image==1.17.0                 # rasterise scanned pages for OCR
 pytesseract==0.3.13               # requires system tesseract-ocr + ara traineddata
@@ -55,7 +61,9 @@ camel-tools==1.6.0                # Arabic normalisation, dediacritisation
 
 # --------------------------------------------------------- Async processing
 celery[redis]==5.6.3
-redis==8.1.0
+# Ceiling set by Celery, not by us: kombu[redis] requires <6.5, so redis 7+
+# makes the whole file unresolvable. Raise this only when Celery does.
+redis==6.4.0
 flower==2.1.0
 tenacity==9.1.4                   # retry/backoff for LLM + parser calls
 
