@@ -57,6 +57,9 @@ jobs:
       RATE_LIMIT_ENABLED: "false"
       POSTGRES_DSN: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/rfp
       TEST_POSTGRES_DSN: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/rfp
+      # The suite derives the unprivileged role's DSN from the one above;
+      # the service container requires a password, so it needs this one.
+      TEST_APP_ROLE_PASSWORD: postgres
 
     defaults:
       run:

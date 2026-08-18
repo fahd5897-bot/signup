@@ -13,11 +13,39 @@ from __future__ import annotations
 
 import os
 import uuid
+from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 
 TEST_DSN = os.getenv("TEST_POSTGRES_DSN", "postgresql+asyncpg://postgres@127.0.0.1:5433/rfp")
-APP_DSN = TEST_DSN.replace("postgres@", "rfp_app@")
+
+#: Credentials for the unprivileged role. Read from the environment so a
+#: deployment can use a real password; the defaults match what
+#: `infra/postgres/init/01-application-role.sh` creates.
+APP_ROLE = os.getenv("TEST_APP_ROLE", "rfp_app")
+APP_ROLE_PASSWORD = os.getenv("TEST_APP_ROLE_PASSWORD", "")
+
+
+def _as_app_role(dsn: str) -> str:
+    """Rewrite the owner DSN to connect as the application role.
+
+    Parsed rather than string-replaced. The obvious `dsn.replace("postgres@",
+    "rfp_app@")` silently does nothing against a URL carrying a password
+    (`postgres:postgres@host`), which is exactly the shape CI uses — so the
+    whole isolation suite would connect as the superuser and pass while
+    proving the opposite of what it claims.
+    """
+    parsed = urlsplit(dsn)
+    credentials = APP_ROLE + (f":{APP_ROLE_PASSWORD}" if APP_ROLE_PASSWORD else "")
+    host = parsed.hostname or "127.0.0.1"
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+    return urlunsplit(
+        (parsed.scheme, f"{credentials}@{host}", parsed.path, parsed.query, parsed.fragment)
+    )
+
+
+APP_DSN = _as_app_role(TEST_DSN)
 
 pytestmark = pytest.mark.integration
 

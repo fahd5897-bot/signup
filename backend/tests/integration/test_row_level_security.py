@@ -161,3 +161,30 @@ async def test_opening_a_session_without_a_tenant_id_is_refused():
     with pytest.raises(TenantScopeError):
         async with tenant_session(""):
             pass
+
+
+async def test_the_suite_is_not_secretly_running_as_the_owner(app_dsn):
+    """Everything in this file is meaningless if the connection is privileged.
+
+    A superuser is exempt from nothing here — the tables are FORCE ROW LEVEL
+    SECURITY — but it can still create, drop, and alter policies, and a DSN
+    that quietly resolves back to the owner has happened once already: the
+    app-role URL used to be derived by string replacement that did not match a
+    password-bearing URL, so CI would have run the entire isolation suite as
+    postgres and passed.
+    """
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = create_async_engine(app_dsn)
+    try:
+        async with engine.connect() as connection:
+            role, is_super = (
+                await connection.execute(
+                    text("SELECT current_user, usesuper FROM pg_user WHERE usename = current_user")
+                )
+            ).one()
+    finally:
+        await engine.dispose()
+
+    assert is_super is False, f"integration tests are connected as a superuser ({role})"
