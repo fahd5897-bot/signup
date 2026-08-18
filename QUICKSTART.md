@@ -58,6 +58,10 @@ pip install -r requirements.txt
 brew install tesseract tesseract-lang poppler
 
 cp ../.env.example ../.env      # then fill in ANTHROPIC_API_KEY and VOYAGE_API_KEY
+
+# create the schema and the row-level security policies
+alembic upgrade head
+
 uvicorn app.main:app --reload --port 8000
 
 # 3. frontend, in a second terminal
@@ -70,9 +74,6 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1 npm run dev
 - **There is no login.** `app/security/` is empty and no `/auth/login` endpoint
   exists, so nothing issues a token. Every request returns 401 until you mint a
   token by hand with the `JWT_SECRET` from your `.env`.
-- **There are no database migrations.** `alembic.ini` is missing and
-  `migrations/versions/` is empty, so no tables exist and the Row-Level Security
-  policies have never been applied. Anything that writes to PostgreSQL fails.
 - **Nothing persists.** Generated answers are returned to the browser and lost
   on refresh; the service layer that would save them is not built.
 
@@ -86,10 +87,22 @@ past that.
 | Working | Not built yet |
 |---|---|
 | Arabic/English parsing, chunking, indexing | Authentication (no login at all) |
-| Grounded generation with citations | Database migrations + RLS policies |
-| The four anti-hallucination gates | Persistence (service layer) |
-| Full UI in both languages | Review / approve / export |
-| CORS and the API integration layer | Requirement extraction from the tender |
+| Grounded generation with citations | Persistence (service layer) |
+| The four anti-hallucination gates | Review / approve / export |
+| Database schema + row-level security | Requirement extraction from the tender |
+| Full UI in both languages | |
+| CORS and the API integration layer | |
+
+### Running the isolation tests
+
+The row-level security policies are covered by tests that need a real
+PostgreSQL — they are skipped automatically when none is reachable, because a
+policy asserted only in Python is not a security control.
+
+```bash
+TEST_POSTGRES_DSN=postgresql+asyncpg://postgres@127.0.0.1:5432/rfp \
+  pytest tests/integration -v
+```
 
 **No user can log in and complete a tender today.** See the phase-6 summary for
 the full gap list and the suggested build order.

@@ -19,6 +19,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID  # noqa: N811
@@ -79,7 +80,7 @@ class GeneratedProposal(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin, 
             "workspace_id",
             "requirement_ref",
             unique=True,
-            postgresql_where=Text("is_current AND deleted_at IS NULL"),
+            postgresql_where=text("is_current AND deleted_at IS NULL"),
         ),
         # The review queue's default ordering.
         Index("ix_proposals_workspace_status", "workspace_id", "status"),
