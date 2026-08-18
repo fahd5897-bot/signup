@@ -41,6 +41,11 @@ warn_unreachable = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Makes `app` importable however pytest is invoked. Without it the suite works
+# under `python -m pytest` (which prepends the working directory) and fails
+# under a bare `pytest` with ModuleNotFoundError — so it passed locally for
+# months and failed the moment CI ran it the other way.
+pythonpath = ["."]
 markers = [
     "integration: needs a live PostgreSQL; skipped when none is reachable",
 ]
