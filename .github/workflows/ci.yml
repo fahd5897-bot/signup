@@ -32,6 +32,19 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      redis:
+        # The rate limiter stores its counters here. It falls back to memory
+        # when Redis is unreachable, so without this service the throttling
+        # tests would pass against a per-process counter — the exact
+        # configuration the limit is meant not to have.
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
     env:
       # Test-only values. Real secrets never appear in the repository; the
       # deployed environments read them from their own secret store.
@@ -39,6 +52,9 @@ jobs:
       VOYAGE_API_KEY: pa-test
       JWT_SECRET: ci-secret-not-for-production-0123456789abcdef
       REDIS_URL: redis://localhost:6379/0
+      # The rate-limiting tests switch it back on for themselves; leaving
+      # it on globally would throttle the suite's own registration volume.
+      RATE_LIMIT_ENABLED: "false"
       POSTGRES_DSN: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/rfp
       TEST_POSTGRES_DSN: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/rfp
 

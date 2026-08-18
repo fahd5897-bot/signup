@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr
     jwt_algorithm: str = "HS256"
     access_token_ttl_seconds: int = 900
+
+    #: Off only for tests and local load runs. A suite that registers a hundred
+    #: accounts trips a limit meant for humans, and the alternative — resetting
+    #: the shared counter between tests — hides the limiter from every test
+    #: instead of just the ones that need it out of the way.
+    rate_limit_enabled: bool = True
     default_locale: Literal["en", "ar"] = "en"
     supported_locales: Annotated[list[str], NoDecode] = ["en", "ar"]
 

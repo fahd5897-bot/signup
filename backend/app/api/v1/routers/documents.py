@@ -13,7 +13,7 @@ import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 
 from app.api.v1.deps.auth import (
     CurrentUser,
@@ -24,9 +24,10 @@ from app.core.config import Settings, get_settings
 from app.core.exceptions import (
     ChecksumMismatchError,
     FileTooLargeError,
+    PermissionDeniedError,
     UnsupportedFormatError,
 )
-from app.db.models.enums import DocumentRole, DocumentStatus
+from app.db.models.enums import DocumentRole, DocumentStatus, UserRole
 from app.schemas.common import Page, TaskAccepted
 from app.schemas.document import (
     ALLOWED_MIME_TYPES,
@@ -174,6 +175,35 @@ async def get_document_status(
         tenant_id=user.tenant_id, document_id=document_id
     )
     return DocumentStatusRead.model_validate(document)
+
+
+@router.delete(
+    "/documents/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a document and everything indexed from it",
+)
+async def delete_document(
+    document_id: uuid.UUID,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Purge the document's vectors, then tombstone the row.
+
+    A customer who uploads the wrong file — another client's pricing, a
+    superseded certificate — needs it gone, and "gone" has to mean it can no
+    longer be retrieved or cited. Without this the chunks stay searchable
+    forever and the only remedy is a support ticket.
+
+    Restricted to owners and bid managers: deleting a source silently changes
+    what every future answer can be grounded in, and answers already citing it
+    keep a citation that no longer resolves.
+    """
+    if user.role not in (UserRole.OWNER, UserRole.BID_MANAGER):
+        raise PermissionDeniedError("your role cannot delete documents")
+
+    await DocumentService(settings).delete(tenant_id=user.tenant_id, document_id=document_id)
+    logger.info("document %s deleted by %s", document_id, user.id)
 
 
 # ----------------------------------------------------------------- internals

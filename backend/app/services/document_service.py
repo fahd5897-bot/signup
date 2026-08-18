@@ -12,6 +12,8 @@ import logging
 import uuid
 from dataclasses import dataclass
 
+from qdrant_client import AsyncQdrantClient
+
 from app.core.config import Settings, get_settings
 from app.core.exceptions import DuplicateDocumentError, TenantMismatchError
 from app.db.models.document import Document
@@ -221,23 +223,34 @@ class DocumentService:
                 metadata={"table_count": table_count},
             )
 
-    async def delete(self, *, tenant_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    async def delete(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        document_id: uuid.UUID,
+        qdrant: AsyncQdrantClient | None = None,
+    ) -> None:
         """Soft-delete the row and purge the vectors.
 
         Vectors go first. A soft-deleted row whose chunks are still indexed
         remains citable evidence for a document the customer believes they
         removed — the failure that matters here is leaving data reachable, not
         leaving a tombstone behind.
+
+        ``qdrant`` lets the caller hand over the client already held on
+        ``app.state``; only a caller with none (a worker, a script) pays for a
+        fresh connection pool, and only that caller's client gets closed.
         """
         from app.rag.vectorstore.collections import QdrantCollectionManager, build_client
 
-        client = await build_client(self._settings)
+        client = qdrant or await build_client(self._settings)
         try:
             await QdrantCollectionManager(client, self._settings).delete_document_data(
                 str(tenant_id), str(document_id)
             )
         finally:
-            await client.close()
+            if qdrant is None:
+                await client.close()
 
         async with tenant_session(tenant_id, self._settings) as session:
             if not await DocumentRepository(session).soft_delete(document_id):

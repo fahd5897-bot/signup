@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Cookie, Depends, Response, status
+from fastapi import APIRouter, Cookie, Depends, Request, Response, status
 
+from app.api.middleware.rate_limit import AUTH_LIMIT, limiter
 from app.api.v1.deps.auth import AuthenticationError, CurrentUser, get_current_user
 from app.core.config import Settings, get_settings
 from app.schemas.auth import (
@@ -84,8 +85,12 @@ def _to_pair(result: AuthResult) -> TokenPair:
     status_code=status.HTTP_201_CREATED,
     summary="Create an organisation and its first user",
 )
+# `request` is required by the limiter, not by the handler: slowapi reads the
+# client address off it to key the counter.
+@limiter.limit(AUTH_LIMIT)
 async def register(
     payload: RegisterRequest,
+    request: Request,
     response: Response,
     settings: Settings = Depends(get_settings),
 ) -> TokenPair:
@@ -101,8 +106,14 @@ async def register(
 
 
 @router.post("/login", response_model=TokenPair, summary="Sign in")
+# The endpoint that matters most. Argon2id verification costs 64 MB and about a
+# tenth of a second by design — what makes a stolen hash near-worthless also
+# makes an unthrottled login a cheap way to exhaust the API's memory, quite
+# apart from credential stuffing.
+@limiter.limit(AUTH_LIMIT)
 async def login(
     payload: LoginRequest,
+    request: Request,
     response: Response,
     settings: Settings = Depends(get_settings),
 ) -> TokenPair:
@@ -116,7 +127,9 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenPair, summary="Exchange a refresh token")
+@limiter.limit(AUTH_LIMIT)
 async def refresh(
+    request: Request,
     response: Response,
     payload: RefreshRequest | None = None,
     refresh_token: str | None = Cookie(default=None),

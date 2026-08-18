@@ -111,6 +111,7 @@ services:
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:?set VOYAGE_API_KEY in .env}
       JWT_SECRET: ${JWT_SECRET:?generate one with python -c 'import secrets; print(secrets.token_urlsafe(48))'}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}

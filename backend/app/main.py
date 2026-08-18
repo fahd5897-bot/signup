@@ -19,6 +19,7 @@ from app.api.middleware.error_handler import (
     ExceptionToResponseMiddleware,
     register_exception_handlers,
 )
+from app.api.middleware.rate_limit import configure_rate_limiting
 from app.api.v1.routers import (
     auth,
     documents,
@@ -77,6 +78,9 @@ def create_app() -> FastAPI:
     # including 500s. Starlette's own catch-all sits outside CORS, so relying
     # on it makes server errors arrive in the browser as opaque CORS failures.
     app.add_middleware(ExceptionToResponseMiddleware)
+    # Registered after the exception catcher so it sits outside it, and before
+    # CORS so a 429 still carries the headers a browser needs to read it.
+    configure_rate_limiting(app, settings)
     _configure_cors(app, settings)
 
     register_exception_handlers(app)

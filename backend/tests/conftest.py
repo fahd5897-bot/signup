@@ -12,6 +12,9 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test")
 os.environ.setdefault("VOYAGE_API_KEY", "pa-test")
 os.environ.setdefault("POSTGRES_DSN", "postgresql+asyncpg://test:test@localhost:5432/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+# The suite registers far more accounts per minute than any person would.
+# Tests that care about the limiter turn it back on explicitly.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 os.environ.setdefault(
     "JWT_SECRET",
     # Must clear the 32-byte floor enforced by Settings; a fixed value keeps
