@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Cookie, Depends, Response, status
 
-from app.api.v1.deps.auth import CurrentUser, get_current_user
+from app.api.v1.deps.auth import AuthenticationError, CurrentUser, get_current_user
 from app.core.config import Settings, get_settings
 from app.schemas.auth import (
     AuthenticatedUser,
@@ -117,11 +117,28 @@ async def login(
 
 @router.post("/refresh", response_model=TokenPair, summary="Exchange a refresh token")
 async def refresh(
-    payload: RefreshRequest,
     response: Response,
+    payload: RefreshRequest | None = None,
+    refresh_token: str | None = Cookie(default=None),
     settings: Settings = Depends(get_settings),
 ) -> TokenPair:
-    result = await AuthService(settings).refresh(payload.refresh_token)
+    """Exchange a refresh token for a new pair.
+
+    **The cookie is the browser's only way in.** It is httpOnly, so JavaScript
+    cannot read it to put it in a body — a refresh endpoint that accepted only
+    a body would be unreachable from the very client the cookie exists for, and
+    every session would simply die at the fifteen-minute access-token
+    expiry with a valid thirty-day credential sitting unused.
+
+    The body is still accepted, for clients with no cookie jar: the CLI, tests,
+    a future mobile app. An explicitly presented token wins over the ambient
+    one, matching how ``get_current_user`` resolves the access token.
+    """
+    token = payload.refresh_token if payload else refresh_token
+    if not token:
+        raise AuthenticationError("no refresh token supplied")
+
+    result = await AuthService(settings).refresh(token)
     _set_auth_cookies(response, result, settings)
     return _to_pair(result)
 

@@ -154,10 +154,21 @@ class ExportService:
             repository = ProposalRepository(session)
             approved, total = await repository.count_approved(workspace_id)
             if total == 0:
+                # `total` counts mandatory requirements only, so zero means one
+                # of two different things and the reviewer needs to be told
+                # which: nothing has been extracted yet, or the tender turned
+                # out to have no mandatory items at all. Reporting the second
+                # as "no requirements" sends someone hunting for a matrix that
+                # is sitting right in front of them.
+                current, _ = await repository.list_current(workspace_id=workspace_id, limit=1)
                 raise ExportBlockedError(
-                    "this workspace has no requirements to submit",
+                    "this tender has no mandatory requirements, so there is "
+                    "nothing the approval gate can certify"
+                    if current
+                    else "this workspace has no requirements yet — read the tender document first",
                     outstanding=0,
                     total=0,
+                    has_optional_requirements=bool(current),
                 )
             if approved < total:
                 blocking = await self._blocking_refs(session, workspace_id)

@@ -144,6 +144,58 @@ async def test_refresh_issues_a_new_access_token(client):
     assert refreshed.json()["user"]["id"] == original["user"]["id"]
 
 
+async def test_a_browser_can_refresh_with_only_its_cookies(client):
+    """The browser's only route in.
+
+    The refresh cookie is httpOnly precisely so JavaScript cannot read it —
+    which means a refresh endpoint reading only the request body is unreachable
+    from the client the cookie exists for. Every session would then die at the
+    fifteen-minute access-token expiry with a valid thirty-day credential
+    sitting unused, and the app would show errors rather than a sign-in prompt,
+    because the access cookie is still present.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    async with client:
+        await client.post("/api/v1/auth/register", json=_signup_body(suffix))
+        # No body at all: exactly what fetch(credentials: "include") sends.
+        refreshed = await client.post("/api/v1/auth/refresh")
+
+    assert refreshed.status_code == 200
+    assert refreshed.json()["access_token"]
+    # And the rotated pair is written back as cookies, or the next refresh
+    # would replay a token the client no longer holds.
+    assert "access_token" in refreshed.cookies
+    assert "refresh_token" in refreshed.cookies
+
+
+async def test_refresh_without_a_token_anywhere_is_401_not_422(client):
+    """A signed-out browser hitting refresh must get an auth error it can act
+    on, not a validation error about a missing body field."""
+    async with client:
+        response = await client.post("/api/v1/auth/refresh")
+    assert response.status_code == 401
+    assert response.json()["type"] == "unauthenticated"
+
+
+async def test_an_explicit_body_token_wins_over_the_cookie(client):
+    """Matches how the access token resolves: an explicitly presented
+    credential beats the ambient one, so a CLI cannot be silently switched onto
+    whatever session the cookie jar happens to hold."""
+    first, second = uuid.uuid4().hex[:8], uuid.uuid4().hex[:8]
+    async with client:
+        await client.post("/api/v1/auth/register", json=_signup_body(first))
+        other = await client.post("/api/v1/auth/register", json=_signup_body(second))
+        # The jar now holds `second`'s cookies; present `other`'s token
+        # explicitly and confirm the response follows the body.
+        refreshed = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": other.json()["refresh_token"]},
+        )
+
+    assert refreshed.status_code == 200
+    assert refreshed.json()["user"]["id"] == other.json()["user"]["id"]
+
+
 async def test_the_same_email_may_own_two_organisations(client):
     """A consultancy serving competing bidders needs one account per client.
 

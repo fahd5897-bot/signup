@@ -153,12 +153,33 @@ async def test_an_empty_workspace_cannot_be_exported(workspace):
     """Nothing answered means nothing signed off; a zero-requirement export
     would be an empty submission that looks successful."""
     tenant_id, workspace_id, _ = workspace
-    with pytest.raises(ExportBlockedError):
+    with pytest.raises(ExportBlockedError) as excinfo:
         await ExportService().export(
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             export_format=ExportFormat.MATRIX,
         )
+    assert excinfo.value.context["has_optional_requirements"] is False
+    assert "read the tender document" in excinfo.value.detail
+
+
+async def test_an_all_optional_tender_says_so_rather_than_claiming_it_is_empty(workspace):
+    """Zero *mandatory* requirements is not the same as zero requirements.
+
+    Telling a bid manager the workspace has none, while a matrix of optional
+    items sits on their screen, sends them hunting for a bug that is not there.
+    """
+    tenant_id, workspace_id, _ = workspace
+    await _proposal(tenant_id, workspace_id, ref="1.9", is_mandatory=False)
+
+    with pytest.raises(ExportBlockedError) as excinfo:
+        await ExportService().export(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            export_format=ExportFormat.MATRIX,
+        )
+    assert excinfo.value.context["has_optional_requirements"] is True
+    assert "no mandatory requirements" in excinfo.value.detail
 
 
 async def test_optional_requirements_do_not_block_the_gate(workspace):
