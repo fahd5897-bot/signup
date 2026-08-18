@@ -1,5 +1,23 @@
-import type { ApiError, GeneratedAnswer, TaskAccepted } from "@/lib/api/types";
+import type {
+  ApiError,
+  DocumentStatusRead,
+  GeneratedAnswer,
+  TaskAccepted,
+} from "@/lib/api/types";
 
+/**
+ * Base URL for the FastAPI backend.
+ *
+ * Defaults to a same-origin path, which is the deployment worth preferring: a
+ * rewrite in front of both apps means no CORS preflight on any request and no
+ * third-party-cookie exposure for the session cookie.
+ *
+ * Set `NEXT_PUBLIC_API_BASE_URL` for a split-origin deployment (frontend on
+ * Vercel, API elsewhere). Note that `NEXT_PUBLIC_*` values are inlined at
+ * BUILD time, not read at runtime — the same image cannot be promoted from
+ * staging to production with a different API host, it must be rebuilt. If that
+ * matters, serve the value from a runtime config endpoint instead.
+ */
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/v1";
 
 /** Typed error carrying the backend's stable slug, so callers branch on
@@ -116,9 +134,7 @@ export const api = {
   },
 
   getDocumentStatus(documentId: string) {
-    return request<{ id: string; status: string; chunk_count: number; is_terminal: boolean }>(
-      `/documents/${documentId}/status`,
-    );
+    return request<DocumentStatusRead>(`/documents/${documentId}/status`);
   },
 
   /** Generate one grounded answer. Seconds, not minutes — synchronous. */

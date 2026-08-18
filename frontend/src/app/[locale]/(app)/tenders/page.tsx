@@ -7,7 +7,9 @@ import { Link } from "@/i18n/navigation";
 
 const TENDERS = [
   {
-    id: "a1",
+    // Real UUIDs: the API validates workspace_id as a UUID, so short
+    // placeholder ids would 422 against the live backend.
+    id: "3f8a1c92-5b47-4e21-9d63-8a2f7c104e55",
     name: "Ministry of Health — Core Network Refresh",
     reference: "MOH/2026/IT/0114",
     deadline: "2026-09-14",
@@ -16,7 +18,7 @@ const TENDERS = [
     status: "in_review",
   },
   {
-    id: "b2",
+    id: "7c21d045-9e83-4a16-b5f2-1d94e6083bb7",
     name: "أمانة منطقة الرياض — أنظمة المراقبة",
     reference: "RIY/2026/SEC/0088",
     deadline: "2026-08-30",

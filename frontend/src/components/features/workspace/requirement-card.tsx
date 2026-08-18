@@ -1,21 +1,27 @@
 "use client";
 
-import { Check, Loader2, MinusCircle, RefreshCw, Sparkles, X } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  Loader2,
+  MinusCircle,
+  RefreshCw,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { CitationChip } from "@/components/features/citations/citation-chip";
 import { GroundingBadge } from "@/components/features/citations/grounding-badge";
+import { AnswerSkeleton } from "@/components/features/workspace/answer-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import type { Citation, GeneratedAnswer, Requirement } from "@/lib/api/types";
+import type { Citation, Requirement } from "@/lib/api/types";
+import type { AnswerState } from "@/lib/hooks/use-generate-answer";
 import { cn } from "@/lib/utils/cn";
 
-export type AnswerState =
-  | { kind: "idle" }
-  | { kind: "generating" }
-  | { kind: "answered"; answer: GeneratedAnswer }
-  | { kind: "error"; message: string };
+export type { AnswerState };
 
 /**
  * Highlight sentences the verifier could not tie to a citation.
@@ -123,18 +129,35 @@ export function RequirementCard({
       {state.kind === "generating" && (
         <>
           <Separator />
-          <div className="space-y-2 p-4">
-            <div className="h-3 w-full animate-pulse rounded bg-muted" />
-            <div className="h-3 w-11/12 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-4/6 animate-pulse rounded bg-muted" />
-          </div>
+          <AnswerSkeleton />
         </>
       )}
 
       {state.kind === "error" && (
         <>
           <Separator />
-          <p className="p-4 text-sm text-destructive">{state.message}</p>
+          <div className="flex items-start gap-2.5 p-4">
+            <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-destructive">{state.message}</p>
+              {/* Quota is the one failure a reviewer can act on themselves;
+                  everything else is a retry or an admin problem. */}
+              {state.slug === "quota_exceeded" && (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Your plan\u2019s generation quota is exhausted.
+                </p>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
+              onClick={() => onGenerate(requirement)}
+            >
+              <RefreshCw aria-hidden />
+              {t("regenerate")}
+            </Button>
+          </div>
         </>
       )}
 

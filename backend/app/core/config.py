@@ -7,10 +7,10 @@ start, rather than surfacing as a 500 on the first request that needs it.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -65,12 +65,36 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 200 * 1024 * 1024
     ingest_max_retries: int = 3
 
+    # ------------------------------------------------------------------- CORS
+    #: Exact browser origins allowed to call this API.
+    #:
+    #: An explicit list, never "*". The frontend sends credentials
+    #: (`credentials: "include"`), and the CORS spec forbids pairing a wildcard
+    #: origin with `Access-Control-Allow-Credentials: true` — Starlette will
+    #: happily configure it and every browser will then reject the response,
+    #: which presents as an opaque network error rather than a CORS message.
+    #: `NoDecode` is required, not stylistic. pydantic-settings treats a list
+    #: field as "complex" and JSON-decodes the raw env value *before* any
+    #: validator runs, so `CORS_ORIGINS=http://a,http://b` raises a
+    #: SettingsError at import time. NoDecode hands the raw string to the
+    #: validator below instead.
+    cors_origins: Annotated[list[str], NoDecode] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, v: object) -> object:
+        """Accept `CORS_ORIGINS=https://a.com,https://b.com` from the env."""
+        return [s.strip() for s in v.split(",") if s.strip()] if isinstance(v, str) else v
+
     # -------------------------------------------------------------------- app
     jwt_secret: SecretStr
     jwt_algorithm: str = "HS256"
     access_token_ttl_seconds: int = 900
     default_locale: Literal["en", "ar"] = "en"
-    supported_locales: list[str] = ["en", "ar"]
+    supported_locales: Annotated[list[str], NoDecode] = ["en", "ar"]
 
     @field_validator("supported_locales", mode="before")
     @classmethod

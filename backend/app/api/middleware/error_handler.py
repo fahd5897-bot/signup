@@ -17,10 +17,56 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
 
 from app.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
+
+
+class ExceptionToResponseMiddleware(BaseHTTPMiddleware):
+    """Convert unhandled exceptions to a JSON 500 *inside* the CORS layer.
+
+    Starlette already installs a catch-all in ``ServerErrorMiddleware``, but
+    that sits at the very outside of the stack — outside ``CORSMiddleware``. An
+    unhandled exception therefore produces a 500 with **no CORS headers**, and
+    the browser reports it as an opaque ``net::ERR_FAILED`` / CORS violation
+    rather than as a server error.
+
+    That failure mode is expensive out of proportion to its cause: the frontend
+    cannot tell a backend bug from the API being down from a genuine CORS
+    misconfiguration, and whoever debugs it starts by rewriting CORS config
+    that was never wrong.
+
+    Registering this middleware *before* the CORS middleware puts it inside,
+    so the response it returns still passes back out through CORS and arrives
+    as a readable 500.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        super().__init__(app)
+
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except AppError as exc:
+            # Raised below the routing layer (e.g. in a dependency), where the
+            # registered handler does not see it.
+            if exc.status_code >= 500:
+                logger.exception("server error on %s: %s", request.url.path, exc.detail)
+            return JSONResponse(status_code=exc.status_code, content=exc.to_payload())
+        except Exception:
+            logger.exception("unhandled error on %s", request.url.path)
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "type": "internal_error",
+                    "title": "An unexpected error occurred.",
+                    # No detail: parser and ORM exception text can carry
+                    # filenames, paths, and query fragments.
+                },
+            )
 
 
 def register_exception_handlers(app: FastAPI) -> None:

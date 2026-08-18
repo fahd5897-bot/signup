@@ -100,6 +100,16 @@ export interface DocumentSummary {
   created_at: string;
 }
 
+/** Polling projection from `GET /api/v1/documents/{id}/status`. */
+export interface DocumentStatusRead {
+  id: string;
+  status: DocumentStatus;
+  chunk_count: number;
+  failure_reason: string | null;
+  /** Tells the client to stop polling. */
+  is_terminal: boolean;
+}
+
 /** 202 body from `POST /api/v1/upload-document`. */
 export interface TaskAccepted {
   task_id: string;

@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 
 import { localeDirection, routing, type Locale } from "@/i18n/routing";
+import { QueryProvider } from "@/lib/providers/query-provider";
 import "@/styles/globals.css";
 
 const inter = Inter({
@@ -56,7 +57,9 @@ export default async function LocaleLayout({
     // Arabic mode.
     <html lang={locale} dir={dir} suppressHydrationWarning>
       <body className={`${inter.variable} ${arabic.variable} font-sans antialiased`}>
-        <NextIntlClientProvider>{children}</NextIntlClientProvider>
+        <NextIntlClientProvider>
+          <QueryProvider>{children}</QueryProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   );
