@@ -7,6 +7,7 @@ import * as React from "react";
 import { ExportBar } from "@/components/features/review/export-bar";
 import { ProposalDetail } from "@/components/features/review/proposal-detail";
 import { ReviewQueue } from "@/components/features/review/review-queue";
+import { TenderSetup } from "@/components/features/requirements/tender-setup";
 import { Button } from "@/components/ui/button";
 import type { Citation } from "@/lib/api/types";
 import { useDraftAll } from "@/lib/hooks/use-draft-all";
@@ -40,6 +41,13 @@ export function ReviewWorkbench({
   const unanswered = (queue.data?.items ?? []).filter(
     (item) => item.status === "draft" || item.status === "abstained",
   );
+
+  // An empty matrix means the tender has not been read yet. Showing the
+  // review queue's empty state there would be technically accurate and
+  // useless: the reviewer's next step is uploading the tender, not waiting.
+  if (queue.isSuccess && (queue.data?.items.length ?? 0) === 0) {
+    return <TenderSetup workspaceId={workspaceId} />;
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">

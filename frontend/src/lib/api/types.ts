@@ -273,3 +273,40 @@ export interface ExportPreview {
   uncited: number;
   exported: number;
 }
+
+// ------------------------------------------------------------- workspaces
+
+export type WorkspaceStatus =
+  | "draft"
+  | "analyzing"
+  | "generating"
+  | "in_review"
+  | "approved"
+  | "submitted"
+  | "archived"
+  | "lost";
+
+/** One tender pursuit. Mirrors `app/schemas/workspace.py::WorkspaceRead`. */
+export interface Workspace {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description: string | null;
+  status: WorkspaceStatus;
+  tender_reference: string | null;
+  issuing_authority: string | null;
+  submission_deadline: string | null;
+  estimated_value: number | null;
+  currency: string | null;
+  response_language: Language;
+  owner_id: string;
+  /** Mandatory requirements only — the same population the export gate counts,
+   *  so the progress bar and the gate can never disagree. */
+  requirements_total: number;
+  requirements_approved: number;
+  submitted_at: string | null;
+  completion_ratio: number;
+  is_exportable: boolean;
+  created_at: string;
+  updated_at: string;
+}

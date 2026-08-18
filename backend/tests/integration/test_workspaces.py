@@ -23,7 +23,7 @@ from app.db.models.enums import (
 from app.db.repositories.proposals import ProposalRepository
 from app.db.session import tenant_session
 from app.schemas.proposal import Citation
-from app.schemas.workspace import WorkspaceCreate
+from app.schemas.workspace import WorkspaceCreate, WorkspaceRead
 from app.services.review_service import ReviewService
 from app.services.workspace_service import WorkspaceService
 from sqlalchemy import text
@@ -204,3 +204,12 @@ async def test_counts_follow_an_approval(two_tenants, owners):
     listed, _ = await WorkspaceService().list(tenant_id=tenant_id)
     assert listed[0].requirements_approved == 1
     assert listed[0].is_exportable is True
+
+    # Serialise exactly as the endpoint does, after the session has closed.
+    # Setting the counts on a session-bound row would emit an UPDATE on a GET,
+    # and `updated_at` would then be server-computed and unreadable here — a
+    # 500 that appears only once someone has approved something, which is
+    # precisely when the list matters most.
+    body = WorkspaceRead.model_validate(listed[0])
+    assert body.requirements_approved == 1
+    assert body.updated_at is not None

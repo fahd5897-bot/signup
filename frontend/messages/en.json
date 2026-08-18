@@ -65,7 +65,7 @@
     "verified": "Verified",
     "partial": "Partially grounded",
     "unverified": "Not grounded",
-    "not_applicable": "No answer",
+    "not_applicable": "Not machine-checked",
     "coverage": "{percent}% of statements cited",
     "unsupportedTitle": "Statements without a source",
     "unsupportedHint": "These sentences are not supported by any cited document. Verify or remove them before approving.",
@@ -168,6 +168,36 @@
     "queueTitle": "Requirements",
     "draftAll": "Draft {count}",
     "draftAllRunning": "Stop ({done}/{total})",
-    "draftAllProgress": "{done} drafted, {failed} failed"
+    "draftAllProgress": "{done} drafted, {failed} failed",
+    "setupTitle": "Read the tender",
+    "setupHint": "Upload the tender document, then extract its requirements into a compliance matrix.",
+    "chooseTender": "Tender document",
+    "extract": "Extract requirements",
+    "extracting": "Reading the tender…",
+    "extractingHint": "This takes a while on a long document — it is read in sections.",
+    "extractionDropped": "{count, plural, one {# proposed requirement} other {# proposed requirements}} could not be traced to text in the document and {count, plural, one {was} other {were}} discarded. Check the document's scan quality.",
+    "stillIngesting": "{count, plural, one {# document is} other {# documents are}} still being processed."
+  },
+  "tenders": {
+    "title": "Tenders",
+    "new": "New tender",
+    "name": "Tender name",
+    "reference": "Reference",
+    "responseLanguage": "Response language",
+    "create": "Create",
+    "cancel": "Cancel",
+    "empty": "No tenders yet",
+    "emptyHint": "Start one, upload its documents, and extract its requirements.",
+    "mandatoryOnly": "mandatory requirements approved",
+    "errors": {
+      "versionConflict": "This changed since you opened it. Reload and try again.",
+      "invalidTransition": "That action is not available.",
+      "approvalBlocked": "Blocked by the approval gate.",
+      "permissionDenied": "Your role does not allow this.",
+      "notFound": "Not found.",
+      "exportBlocked": "Every mandatory requirement must be approved before export.",
+      "unauthenticated": "Your session has expired. Sign in again.",
+      "unknown": "Something went wrong. Try again."
+    }
   }
 }

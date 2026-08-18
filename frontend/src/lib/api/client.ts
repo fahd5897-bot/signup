@@ -2,6 +2,7 @@ import type {
   ApiError,
   AuthenticatedUser,
   DocumentStatusRead,
+  DocumentSummary,
   ExportFormat,
   ExportPreview,
   GeneratedAnswer,
@@ -13,6 +14,7 @@ import type {
   ReviewProgress,
   TaskAccepted,
   TokenPair,
+  Workspace,
 } from "@/lib/api/types";
 
 /**
@@ -175,6 +177,34 @@ export const api = {
       options.signal?.addEventListener("abort", () => xhr.abort());
 
       xhr.send(form);
+    });
+  },
+
+  /** The tenant's documents. Scoped by RLS to the caller's tenant; no tenant
+   *  parameter exists, because the session cannot see anything else. */
+  listDocuments(params: { role?: string; workspaceId?: string; status?: string } = {}) {
+    const query = new URLSearchParams();
+    if (params.role) query.set("role", params.role);
+    if (params.workspaceId) query.set("workspace_id", params.workspaceId);
+    if (params.status) query.set("status_filter", params.status);
+    const suffix = query.size ? `?${query}` : "";
+    return request<Page<DocumentSummary>>(`/documents${suffix}`);
+  },
+
+  listWorkspaces() {
+    return request<Page<Workspace>>("/workspaces");
+  },
+
+  createWorkspace(body: {
+    name: string;
+    tender_reference?: string | null;
+    issuing_authority?: string | null;
+    submission_deadline?: string | null;
+    response_language?: string;
+  }) {
+    return request<Workspace>("/workspaces", {
+      method: "POST",
+      body: JSON.stringify(body),
     });
   },
 

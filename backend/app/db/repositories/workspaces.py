@@ -95,15 +95,3 @@ class WorkspaceRepository:
             .all()
         )
         return list(rows), total
-
-    async def refresh_counts(self, workspace: Workspace, *, approved: int, total: int) -> None:
-        """Cache the review counts the dashboard reads.
-
-        Denormalised deliberately: the tender list renders a progress bar per
-        row, and computing it live would be one aggregate query per workspace
-        on every page load. The authoritative count is still the one the export
-        gate computes from the proposals themselves — this is a display value
-        and nothing branches on it.
-        """
-        workspace.requirements_total = total
-        workspace.requirements_approved = approved

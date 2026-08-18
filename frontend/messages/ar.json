@@ -65,7 +65,7 @@
     "verified": "موثّقة",
     "partial": "موثّقة جزئياً",
     "unverified": "غير موثّقة",
-    "not_applicable": "لا توجد إجابة",
+    "not_applicable": "لم يُتحقق آليًا",
     "coverage": "{percent}٪ من العبارات موثّقة",
     "unsupportedTitle": "عبارات بلا مصدر",
     "unsupportedHint": "هذه الجمل غير مدعومة بأي مستند مستشهد به. تحقق منها أو احذفها قبل الاعتماد.",
@@ -168,6 +168,36 @@
     "queueTitle": "المتطلبات",
     "draftAll": "أنشئ {count}",
     "draftAllRunning": "إيقاف ({done}/{total})",
-    "draftAllProgress": "أُنشئ {done}، فشل {failed}"
+    "draftAllProgress": "أُنشئ {done}، فشل {failed}",
+    "setupTitle": "قراءة كراسة الشروط",
+    "setupHint": "ارفع كراسة الشروط، ثم استخرج متطلباتها إلى مصفوفة امتثال.",
+    "chooseTender": "مستند كراسة الشروط",
+    "extract": "استخراج المتطلبات",
+    "extracting": "جارٍ قراءة الكراسة…",
+    "extractingHint": "يستغرق هذا وقتًا في المستندات الطويلة — تُقرأ على أقسام.",
+    "extractionDropped": "{count, plural, one {متطلب مقترح واحد لم يُعثر} two {متطلبان مقترحان لم يُعثر} few {# متطلبات مقترحة لم يُعثر} many {# متطلبًا مقترحًا لم يُعثر} other {# متطلب مقترح لم يُعثر}} على نصه في المستند، وقد استُبعد. تحقق من جودة المسح الضوئي.",
+    "stillIngesting": "{count, plural, one {مستند واحد قيد} two {مستندان قيد} few {# مستندات قيد} many {# مستندًا قيد} other {# مستند قيد}} المعالجة."
+  },
+  "tenders": {
+    "title": "المنافسات",
+    "new": "منافسة جديدة",
+    "name": "اسم المنافسة",
+    "reference": "الرقم المرجعي",
+    "responseLanguage": "لغة الرد",
+    "create": "إنشاء",
+    "cancel": "إلغاء",
+    "empty": "لا توجد منافسات بعد",
+    "emptyHint": "ابدأ منافسة، وارفع مستنداتها، ثم استخرج متطلباتها.",
+    "mandatoryOnly": "من المتطلبات الإلزامية معتمدة",
+    "errors": {
+      "versionConflict": "تغيّر هذا منذ فتحك له. أعد التحميل وحاول مجددًا.",
+      "invalidTransition": "هذا الإجراء غير متاح.",
+      "approvalBlocked": "محجوب بواسطة بوابة الاعتماد.",
+      "permissionDenied": "صلاحيتك لا تسمح بهذا الإجراء.",
+      "notFound": "غير موجود.",
+      "exportBlocked": "يجب اعتماد كل متطلب إلزامي قبل التصدير.",
+      "unauthenticated": "انتهت جلستك. سجّل الدخول من جديد.",
+      "unknown": "حدث خطأ. حاول مرة أخرى."
+    }
   }
 }

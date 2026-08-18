@@ -128,10 +128,11 @@ reverse.
 | Working end to end | Not built |
 |---|---|
 | Registration, login, roles, tenant isolation via RLS | Billing and plan enforcement |
-| Arabic/English parsing, chunking, hybrid indexing | Go/No-Go analysis (the screen is a placeholder) |
-| Requirement extraction into a compliance matrix | Tenant-branded export templates |
-| Grounded generation with citations, or a stated abstention | Batch generation across a whole tender |
-| Review, edit, approve, reject, escalate to an SME | SSO |
-| Export to DOCX, PDF, and the compliance matrix | Kubernetes/Terraform deployment |
+| Creating tenders, uploading documents, live ingestion status | Go/No-Go analysis (the screen is a placeholder) |
+| Arabic/English parsing, chunking, hybrid indexing | Tenant-branded export templates |
+| Requirement extraction into a compliance matrix | Assigning a named SME (the escalation control is disabled) |
+| Grounded generation with citations, or a stated abstention | SSO |
+| Review, edit, approve, reject — in the browser | Kubernetes/Terraform deployment |
+| Export to DOCX, PDF, and the compliance matrix | |
 | The four anti-hallucination gates, plus the approval gate | |
-| Full UI in Arabic and English | |
+| Full UI in Arabic and English, right-to-left throughout | |

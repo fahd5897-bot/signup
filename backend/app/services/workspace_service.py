@@ -59,21 +59,33 @@ class WorkspaceService:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[Workspace], int]:
-        """The tender list, with each row's review counts refreshed.
+        """The tender list, with each row's review counts computed live.
 
-        The counts are recomputed here rather than trusted from the cached
-        columns, because every write path that could move them (approval,
-        export, re-extraction) would otherwise have to remember to update two
-        places, and the one that forgets shows a reviewer a progress bar that
-        disagrees with the export gate.
+        Recomputed rather than trusted from the cached columns, because every
+        write path that could move them (approval, export, re-extraction) would
+        otherwise have to remember to update two places, and the one that
+        forgets shows a reviewer a progress bar that disagrees with the export
+        gate.
+
+        Each row is detached before its counts are set, so this stays a read.
+        Assigning to a session-bound instance emits an UPDATE on a GET, and that
+        UPDATE makes ``updated_at`` server-computed — which the response model
+        then cannot read once the session has closed. The failure is
+        intermittent in the worst way: it appears only when the counts actually
+        changed, so the list works right up until someone approves something.
         """
         async with tenant_session(tenant_id, self._settings) as session:
             repository = WorkspaceRepository(session)
             workspaces, total = await repository.list(status=status, limit=limit, offset=offset)
             proposals = ProposalRepository(session)
-            for workspace in workspaces:
-                approved, mandatory_total = await proposals.count_approved(workspace.id)
-                await repository.refresh_counts(workspace, approved=approved, total=mandatory_total)
+            counts = [
+                (workspace, await proposals.count_approved(workspace.id))
+                for workspace in workspaces
+            ]
+            for workspace, (approved, mandatory_total) in counts:
+                session.expunge(workspace)
+                workspace.requirements_approved = approved
+                workspace.requirements_total = mandatory_total
             return workspaces, total
 
 
