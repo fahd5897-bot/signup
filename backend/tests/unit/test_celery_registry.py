@@ -42,3 +42,17 @@ def test_the_beat_schedule_only_names_registered_tasks(registry) -> None:
 
     scheduled = {entry["task"] for entry in celery_app.conf.beat_schedule.values()}
     assert scheduled <= set(registry)
+
+
+def test_the_task_retry_ceiling_follows_the_setting(settings) -> None:
+    """Celery's ceiling and the task body's check must be the same number.
+
+    The body retries while `request.retries < settings.ingest_max_retries`. If
+    Celery's own ceiling were lower, `self.retry` would raise
+    MaxRetriesExceededError from inside the branch meant to mark the document
+    FAILED — and the document would sit in a transient status forever, which
+    the interface renders as "still processing".
+    """
+    from app.workers.tasks.ingest import parse_document_task
+
+    assert parse_document_task.max_retries == settings.ingest_max_retries

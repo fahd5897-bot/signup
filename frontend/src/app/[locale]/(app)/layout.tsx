@@ -1,6 +1,7 @@
 import { setRequestLocale } from "next-intl/server";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { SessionGuard } from "@/components/layout/session-guard";
 import type { Locale } from "@/i18n/routing";
 
 export default async function AppLayout({
@@ -13,5 +14,10 @@ export default async function AppLayout({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  return <AppShell locale={locale as Locale}>{children}</AppShell>;
+  return (
+    <AppShell locale={locale as Locale}>
+      <SessionGuard />
+      {children}
+    </AppShell>
+  );
 }

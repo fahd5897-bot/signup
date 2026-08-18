@@ -23,10 +23,18 @@ from app.workers.runner import run_sync
 logger = logging.getLogger(__name__)
 
 
+#: One number, read once at import. Celery enforces its own ceiling and the
+#: task body checks the setting before retrying; if those two ever disagreed,
+#: `self.retry` would raise MaxRetriesExceededError from inside the branch that
+#: is supposed to mark the document FAILED, and the document would sit in a
+#: transient status forever.
+_MAX_RETRIES = get_settings().ingest_max_retries
+
+
 @celery_app.task(
     bind=True,
     name="ingest.parse_document",
-    max_retries=3,
+    max_retries=_MAX_RETRIES,
     # Jittered backoff. Without jitter, a Qdrant restart makes every queued
     # document retry in lockstep and knock it over again on recovery.
     retry_backoff=30,
@@ -113,7 +121,20 @@ def parse_document_task(
             self.request.retries + 1,
             result.failure_reason,
         )
-        raise self.retry(countdown=30 * (2**self.request.retries))
+        try:
+            raise self.retry(countdown=30 * (2**self.request.retries))
+        except MaxRetriesExceededError:
+            # Belt and braces against the two limits drifting apart. Reaching
+            # here means the document would otherwise be abandoned mid-flight,
+            # which the UI renders as "still processing" indefinitely.
+            _persist(
+                document_id,
+                tenant_id,
+                DocumentStatus.FAILED,
+                result.failure_reason or "ingestion exhausted its retries",
+                result,
+            )
+            raise
 
     # Terminal: either non-retryable, or retries exhausted. Persisting the
     # reason is what turns a stuck spinner into an actionable message.
