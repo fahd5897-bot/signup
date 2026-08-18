@@ -15,7 +15,7 @@ from app.api.middleware.error_handler import (
 )
 from app.api.v1.routers import documents, generation
 from app.main import _configure_cors
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.testclient import TestClient
 
 ALLOWED = "http://localhost:3000"
@@ -35,6 +35,14 @@ def client(settings) -> TestClient:
     @app.get("/api/v1/_boom")
     async def _boom() -> None:
         raise RuntimeError("unexpected")
+
+    @app.get("/api/v1/_export_stub")
+    async def _export_stub() -> Response:
+        return Response(
+            content=b"x",
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": 'attachment; filename="moh-2026.xlsx"'},
+        )
 
     return TestClient(app)
 
@@ -117,3 +125,21 @@ def test_cors_origins_parses_comma_separated_env(monkeypatch) -> None:
     settings = Settings()
     assert settings.cors_origins == ["https://a.example.com", "https://b.example.com"]
     assert settings.supported_locales == ["en", "ar"]
+
+
+def test_the_download_filename_survives_a_cross_origin_export(client: TestClient) -> None:
+    """`Content-Disposition` must be named in `expose_headers`.
+
+    The failure is silent and only reproduces in a browser: the header arrives,
+    the browser withholds it from JavaScript, and the client falls back to a
+    generic name as though the server never sent one. A submission document
+    reaching a procurement authority as "tender-response.xlsx" instead of the
+    named artefact is not a cosmetic problem.
+    """
+    response = client.get("/api/v1/_export_stub", headers={"Origin": ALLOWED})
+    exposed = {
+        h.strip().lower()
+        for h in response.headers.get("access-control-expose-headers", "").split(",")
+    }
+    assert "content-disposition" in exposed
+    assert "x-request-id" in exposed

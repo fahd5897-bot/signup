@@ -225,8 +225,16 @@ class ProposalRepository:
             .all()
         )
 
+    #: States that count as signed off by a human. ``EXPORTED`` is included
+    #: because it is reached only by passing the approval gate — it is a
+    #: stronger state than ``APPROVED``, not a weaker one. Counting only
+    #: ``APPROVED`` would mean the first export locks the workspace out of
+    #: every later one, and a submission normally needs both the response
+    #: document and the compliance matrix.
+    SIGNED_OFF = (ProposalStatus.APPROVED, ProposalStatus.EXPORTED)
+
     async def count_approved(self, workspace_id: uuid.UUID) -> tuple[int, int]:
-        """Return ``(approved, total)`` over current mandatory requirements.
+        """Return ``(signed off, total)`` over current mandatory requirements.
 
         Mandatory only: the export gate turns on whether every *required* item
         is signed off, and counting optional ones would block a submission that
@@ -247,7 +255,7 @@ class ProposalRepository:
             await self._session.execute(
                 select(func.count())
                 .select_from(GeneratedProposal)
-                .where(*base, GeneratedProposal.status == ProposalStatus.APPROVED)
+                .where(*base, GeneratedProposal.status.in_(self.SIGNED_OFF))
             )
         ).scalar_one()
         return approved, total
@@ -278,6 +286,12 @@ class ProposalRepository:
         if assigned_sme_id is not None:
             proposal.assigned_sme_id = assigned_sme_id
         await self._session.flush()
+        # `updated_at` is computed by PostgreSQL via `onupdate`, so after the
+        # UPDATE the in-memory value is stale and SQLAlchemy marks it for
+        # re-fetch. The caller reads this row after the session closes, where
+        # a re-fetch raises DetachedInstanceError — which surfaces as a 500 at
+        # serialisation time, long after the write itself succeeded.
+        await self._session.refresh(proposal)
 
     async def apply_edit(
         self,
@@ -304,3 +318,6 @@ class ProposalRepository:
             proposal.reviewed_by_id = None
             proposal.reviewed_at = None
         await self._session.flush()
+        # See `touch_reviewed`: resolve the server-computed `updated_at` while
+        # the session is still open.
+        await self._session.refresh(proposal)

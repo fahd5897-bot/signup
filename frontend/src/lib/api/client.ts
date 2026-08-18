@@ -2,7 +2,15 @@ import type {
   ApiError,
   AuthenticatedUser,
   DocumentStatusRead,
+  ExportFormat,
+  ExportPreview,
   GeneratedAnswer,
+  Page,
+  Proposal,
+  ProposalSummary,
+  RequirementExtractionResult,
+  ReviewAction,
+  ReviewProgress,
   TaskAccepted,
   TokenPair,
 } from "@/lib/api/types";
@@ -191,5 +199,115 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     });
+  },
+
+  // ------------------------------------------------------------- requirements
+
+  /**
+   * Read a tender document into the workspace's compliance matrix.
+   *
+   * Synchronous and slow — a large tender is several model calls — but a bid
+   * manager who has just uploaded a tender is sitting in front of the screen
+   * waiting to see what it asks for, and a task id to poll is not an answer to
+   * that.
+   */
+  extractRequirements(
+    workspaceId: string,
+    body: { document_id: string; overwrite_existing?: boolean },
+  ) {
+    return request<RequirementExtractionResult>(
+      `/workspaces/${workspaceId}/extract-requirements`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  },
+
+  // ------------------------------------------------------------------ review
+
+  reviewQueue(
+    workspaceId: string,
+    params: { status?: string; assignedToMe?: boolean; mandatoryOnly?: boolean } = {},
+  ) {
+    const query = new URLSearchParams();
+    if (params.status) query.set("status_filter", params.status);
+    if (params.assignedToMe) query.set("assigned_to_me", "true");
+    if (params.mandatoryOnly) query.set("mandatory_only", "true");
+    const suffix = query.size ? `?${query}` : "";
+    return request<Page<ProposalSummary>>(`/workspaces/${workspaceId}/review-queue${suffix}`);
+  },
+
+  reviewProgress(workspaceId: string) {
+    return request<ReviewProgress>(`/workspaces/${workspaceId}/review-progress`);
+  },
+
+  proposal(proposalId: string) {
+    return request<Proposal>(`/proposals/${proposalId}`);
+  },
+
+  /**
+   * Record a human decision.
+   *
+   * `expected_version` is not optional. The reviewer's screen holds a snapshot,
+   * and a decision applied to text that has since changed would attach their
+   * name to words they never read — the server answers 409 rather than merging.
+   */
+  reviewProposal(
+    proposalId: string,
+    body: {
+      action: ReviewAction;
+      expected_version: number;
+      review_notes?: string | null;
+      assigned_sme_id?: string | null;
+      /** Required to approve an answer carrying no citations, alongside notes. */
+      acknowledge_ungrounded?: boolean;
+    },
+  ) {
+    return request<Proposal>(`/proposals/${proposalId}/review`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** Store the reviewer's wording. The generated original is never overwritten. */
+  editProposal(
+    proposalId: string,
+    body: { edited_text: string; expected_version: number; review_notes?: string | null },
+  ) {
+    return request<Proposal>(`/proposals/${proposalId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  },
+
+  // ------------------------------------------------------------------ export
+
+  /** What an export would contain. Runs the same gate, so the UI can disable
+   *  the button for the same reason the API would refuse. */
+  exportPreview(workspaceId: string) {
+    return request<ExportPreview>(`/workspaces/${workspaceId}/export-preview`);
+  },
+
+  /**
+   * Download an artefact.
+   *
+   * Returns a Blob rather than navigating, so a 409 from the export gate is a
+   * catchable error with a slug the UI can explain. A plain link would render
+   * the JSON error body in a new tab.
+   */
+  async exportWorkspace(
+    workspaceId: string,
+    format: ExportFormat,
+  ): Promise<{ blob: Blob; filename: string }> {
+    const response = await fetch(
+      `${API_BASE}/workspaces/${workspaceId}/export?export_format=${format}`,
+      { credentials: "include" },
+    );
+    if (!response.ok) throw await parseError(response);
+
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const match = /filename="([^"]+)"/.exec(disposition);
+    return {
+      blob: await response.blob(),
+      filename: match?.[1] ?? `tender-response.${format === "matrix" ? "xlsx" : format}`,
+    };
   },
 };

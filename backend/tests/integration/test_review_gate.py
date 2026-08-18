@@ -18,15 +18,38 @@ from app.core.exceptions import (
     UngroundedApprovalError,
     VersionConflictError,
 )
-from app.db.models.enums import GroundingVerdict, Language, ProposalStatus, UserRole
+from app.db.models.enums import ChunkType, GroundingVerdict, Language, ProposalStatus, UserRole
 from app.db.repositories.proposals import ProposalRepository
 from app.db.session import tenant_session
+from app.schemas.proposal import Citation, ProposalRead
 from app.services.review_service import ReviewService
 from sqlalchemy import text
 
 pytestmark = pytest.mark.integration
 
-CITED = [{"chunk_id": "c1", "document_name": "iso-27001.pdf", "page_number": 4}]
+
+def _citation(**overrides) -> dict:
+    """Build a citation through the production model, not by hand.
+
+    A hand-written dict drifts from `Citation` silently — the JSONB column
+    accepts anything, so the row stores fine and only fails much later when a
+    response model tries to serialise it. Going through the model means the
+    fixture cannot describe a citation the application would never write.
+    """
+    payload = {
+        "chunk_id": "c1",
+        "document_id": uuid.uuid4(),
+        "document_name": "iso-27001.pdf",
+        "page_number": 4,
+        "chunk_type": ChunkType.NARRATIVE,
+        "quoted_text": "Certificate 12345 — ISO/IEC 27001:2022, valid until 2027.",
+        "relevance_score": 0.94,
+    }
+    payload.update(overrides)
+    return Citation(**payload).model_dump(mode="json")
+
+
+CITED = [_citation()]
 
 
 @pytest.fixture(autouse=True)
@@ -135,6 +158,15 @@ async def test_approval_records_a_named_human_and_advances_the_revision(workspac
     # The revision must move, or a second reviewer holding version 1 would
     # still pass the freshness check and overwrite this decision.
     assert approved.version == 2
+
+    # Serialise it exactly as the endpoint does, after the session has closed.
+    # `updated_at` is computed by PostgreSQL on UPDATE, so the returned row
+    # carries an attribute SQLAlchemy wants to re-fetch — and on a detached
+    # instance that raises, turning a successful approval into a 500. Asserting
+    # on the ORM fields alone never touches it and reports green.
+    body = ProposalRead.model_validate(approved)
+    assert body.status is ProposalStatus.APPROVED
+    assert body.updated_at is not None
 
 
 async def test_uncited_answer_cannot_be_approved(workspace):
@@ -358,6 +390,7 @@ async def test_editing_an_approved_answer_revokes_the_approval(workspace):
         expected_version=2,
     )
 
+    assert ProposalRead.model_validate(edited).final_text == "We hold ISO 27001 and ISO 9001."
     assert edited.status is ProposalStatus.PENDING_REVIEW
     assert edited.reviewed_by_id is None
     assert edited.reviewed_at is None

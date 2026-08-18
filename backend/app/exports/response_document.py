@@ -20,6 +20,7 @@ from docx.shared import Pt
 from docx.text.paragraph import Paragraph
 
 from app.exports.models import ExportBundle, ExportRow
+from app.ingestion.normalizers.arabic import arabic_ratio
 
 MEDIA_TYPE: Final = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -34,10 +35,25 @@ _PREPARED_AR: Final = "أُعد بواسطة"
 _PREPARED_EN: Final = "Prepared by"
 
 
+#: Share of Arabic letters above which a paragraph is laid out right-to-left.
+#: Low on purpose: an Arabic sentence quoting "ISO/IEC 27001:2022" and a
+#: certificate number is mostly Latin characters by count, and laying it out
+#: left-to-right puts its full stop on the wrong end.
+_RTL_THRESHOLD: Final = 0.15
+
+
 def build_response_docx(bundle: ExportBundle) -> bytes:
-    """Render the approved answers, in the tender's own order."""
+    """Render the approved answers, in the tender's own order.
+
+    Direction is decided **per paragraph**, from the text itself, rather than
+    once for the whole document from the workspace language. A GCC tender is
+    routinely Arabic prose with English standard references, and answers come
+    back in either script inside one workspace — so a document-level flag gets
+    it wrong for every paragraph in the other language, which is exactly the
+    case a whole-document test never catches.
+    """
     document = Document()
-    _set_default_font(document, bundle.is_rtl)
+    _set_default_font(document)
 
     title = _TITLE_AR if bundle.is_rtl else _TITLE_EN
     _paragraph(document, title, bundle.is_rtl, style="Title")
@@ -51,7 +67,7 @@ def build_response_docx(bundle: ExportBundle) -> bytes:
     document.add_page_break()
 
     for row in bundle.answered_rows:
-        _write_requirement(document, row, bundle.is_rtl)
+        _write_requirement(document, row)
 
     buffer = io.BytesIO()
     document.save(buffer)
@@ -59,12 +75,15 @@ def build_response_docx(bundle: ExportBundle) -> bytes:
 
 
 # ------------------------------------------------------------------ internals
-def _write_requirement(document, row: ExportRow, rtl: bool) -> None:
+def _write_requirement(document, row: ExportRow) -> None:
     heading = f"{row.requirement_ref} — {row.requirement_text}".strip(" —")
-    _paragraph(document, heading, rtl, style="Heading 2")
+    # The requirement is quoted from the tender and the answer is written back
+    # to it; they are frequently in different scripts, so each is measured
+    # separately rather than inheriting one verdict.
+    _paragraph(document, heading, is_rtl_text(heading), style="Heading 2")
     for block in (row.answer_text or "").split("\n"):
         if block.strip():
-            _paragraph(document, block.strip(), rtl)
+            _paragraph(document, block.strip(), is_rtl_text(block))
 
 
 def _paragraph(document, text: str, rtl: bool, *, style: str | None = None) -> Paragraph:
@@ -76,6 +95,11 @@ def _paragraph(document, text: str, rtl: bool, *, style: str | None = None) -> P
     if rtl:
         _mark_run_rtl(run)
     return paragraph
+
+
+def is_rtl_text(text: str) -> bool:
+    """Whether this specific string should be laid out right-to-left."""
+    return arabic_ratio(text) >= _RTL_THRESHOLD
 
 
 def _mark_paragraph_rtl(paragraph: Paragraph) -> None:
@@ -102,22 +126,26 @@ def _mark_run_rtl(run) -> None:
         properties.append(properties.makeelement(qn("w:rtl"), {}))
 
 
-def _set_default_font(document, rtl: bool) -> None:
+def _set_default_font(document) -> None:
     """Set both the Latin and the complex-script font on the Normal style.
 
-    Word tracks them separately (``w:cs`` is the complex-script face). Setting
-    only the Latin one leaves Arabic to whatever the reader's machine chooses,
-    which is how a submission renders differently on the evaluator's screen
-    than on the bidder's.
+    Word tracks them separately (``w:cs`` is the complex-script face), and both
+    are set unconditionally rather than by the document's language: a single
+    submission routinely carries Arabic answers and English standard names, so
+    branching on one language leaves the other script to whatever the reader's
+    machine happens to substitute — which is how a document renders differently
+    on the evaluator's screen than on the bidder's.
     """
     style = document.styles["Normal"]
-    style.font.name = _ARABIC_FONT if rtl else _LATIN_FONT
     style.font.size = Pt(11)
 
-    element = style.element.rPr.rFonts
+    # Created explicitly. Assigning `style.font.name` would create it as a side
+    # effect, but it also writes the Latin face into the same element, which is
+    # the branch this function exists to avoid.
+    element = style.element.get_or_add_rPr().get_or_add_rFonts()
     element.set(qn("w:ascii"), _LATIN_FONT)
     element.set(qn("w:hAnsi"), _LATIN_FONT)
     element.set(qn("w:cs"), _ARABIC_FONT)
 
 
-__all__ = ["MEDIA_TYPE", "build_response_docx"]
+__all__ = ["MEDIA_TYPE", "build_response_docx", "is_rtl_text"]

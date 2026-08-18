@@ -2,31 +2,23 @@
 
 import * as React from "react";
 
-import { DocumentOutline, type OutlineNode } from "@/components/features/workspace/document-outline";
-import { QuestionnairePanel } from "@/components/features/workspace/questionnaire-panel";
-import type { Citation, Requirement } from "@/lib/api/types";
+import { ReviewWorkbench } from "@/components/features/review/review-workbench";
+import { SourcePanel } from "@/components/features/review/source-panel";
+import type { Citation } from "@/lib/api/types";
 
 const MIN_PANE = 22;
 const MAX_PANE = 60;
 
 /**
- * The reviewer workbench: source on one side, answers on the other.
+ * The reviewer workbench: source on one side, the review queue on the other.
  *
- * The two panes share `activeCitation`, which is the whole point of the split
- * — clicking a citation chip on the answer side scrolls and highlights the
- * source on the document side without a round trip or a lost scroll position.
+ * The two panes share `activeCitation`, which is the whole point of the split —
+ * clicking a citation chip beside an answer shows the exact source span it was
+ * drawn from, with no round trip and no lost scroll position. A reviewer who
+ * cannot make that jump in one click stops checking and starts rubber-stamping,
+ * and every grounding control upstream stops mattering.
  */
-export function SplitView({
-  workspaceId,
-  documentTitle,
-  outline,
-  requirements,
-}: {
-  workspaceId: string;
-  documentTitle: string;
-  outline: OutlineNode[];
-  requirements: Requirement[];
-}) {
+export function SplitView({ workspaceId }: { workspaceId: string }) {
   const [activeCitation, setActiveCitation] = React.useState<Citation | null>(null);
   const [leftPercent, setLeftPercent] = React.useState(34);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -59,11 +51,7 @@ export function SplitView({
   return (
     <div ref={containerRef} className="flex h-full min-h-0">
       <div style={{ width: `${leftPercent}%` }} className="min-w-0 shrink-0">
-        <DocumentOutline
-          nodes={outline}
-          activeCitation={activeCitation}
-          documentTitle={documentTitle}
-        />
+        <SourcePanel citation={activeCitation} />
       </div>
 
       <div
@@ -88,9 +76,8 @@ export function SplitView({
       </div>
 
       <div className="min-w-0 flex-1">
-        <QuestionnairePanel
+        <ReviewWorkbench
           workspaceId={workspaceId}
-          requirements={requirements}
           activeCitation={activeCitation}
           onSelectCitation={setActiveCitation}
         />

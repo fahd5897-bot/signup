@@ -13,9 +13,16 @@ import uuid
 import zipfile
 
 import pytest
-from app.db.models.enums import GroundingVerdict, Language, ProposalStatus, UserRole
+from app.db.models.enums import (
+    ChunkType,
+    GroundingVerdict,
+    Language,
+    ProposalStatus,
+    UserRole,
+)
 from app.db.repositories.proposals import ProposalRepository
 from app.db.session import tenant_session
+from app.schemas.proposal import Citation
 from app.services.export_service import ExportBlockedError, ExportFormat, ExportService
 from app.services.review_service import ReviewService
 from openpyxl import load_workbook
@@ -23,10 +30,25 @@ from sqlalchemy import text
 
 pytestmark = pytest.mark.integration
 
+
+def _citation(chunk_id: str, document_name: str, page_number: int | None = None) -> dict:
+    """Built through the production model, so the fixture cannot describe a
+    citation shape the application would never write."""
+    return Citation(
+        chunk_id=chunk_id,
+        document_id=uuid.uuid4(),
+        document_name=document_name,
+        page_number=page_number,
+        chunk_type=ChunkType.NARRATIVE,
+        quoted_text="Certificate 12345 — ISO/IEC 27001:2022, valid until 2027.",
+        relevance_score=0.94,
+    ).model_dump(mode="json")
+
+
 CITED = [
-    {"chunk_id": "c1", "document_name": "iso-27001.pdf", "page_number": 4},
-    {"chunk_id": "c2", "document_name": "iso-27001.pdf", "page_number": 5},
-    {"chunk_id": "c3", "document_name": "company-profile.docx"},
+    _citation("c1", "iso-27001.pdf", 4),
+    _citation("c2", "iso-27001.pdf", 5),
+    _citation("c3", "company-profile.docx"),
 ]
 
 
@@ -245,6 +267,50 @@ async def test_exported_answers_are_marked_and_can_no_longer_be_re_reviewed(work
             expected_version=3,
             review_notes="second thoughts",
         )
+
+
+async def test_a_second_export_is_not_blocked_by_the_first(workspace):
+    """A submission normally needs both the response document and the
+    compliance matrix.
+
+    Marking rows EXPORTED must not read as "no longer approved" — that would
+    lock the workspace out of every later export and report the approvals as
+    missing, which looks to a bid manager on deadline like the sign-offs were
+    lost.
+    """
+    tenant_id, workspace_id, owner_id = workspace
+    proposal_id = await _proposal(tenant_id, workspace_id, ref="1.1")
+    await _approve(tenant_id, proposal_id, owner_id)
+    service = ExportService()
+
+    await service.export(
+        tenant_id=tenant_id, workspace_id=workspace_id, export_format=ExportFormat.DOCX
+    )
+    second = await service.export(
+        tenant_id=tenant_id, workspace_id=workspace_id, export_format=ExportFormat.MATRIX
+    )
+
+    assert second.summary["answered"] == 1
+    progress = await ReviewService().progress(tenant_id=tenant_id, workspace_id=workspace_id)
+    assert progress.ready_to_export is True
+    assert (progress.approved, progress.outstanding) == (1, 0)
+
+
+async def test_an_exported_answer_still_ships_in_a_later_export(workspace):
+    """Its text must survive the status change, or the second artefact would
+    describe an empty submission."""
+    tenant_id, workspace_id, owner_id = workspace
+    proposal_id = await _proposal(tenant_id, workspace_id, ref="1.1", answer="Approved answer.")
+    await _approve(tenant_id, proposal_id, owner_id)
+    service = ExportService()
+
+    await service.export(
+        tenant_id=tenant_id, workspace_id=workspace_id, export_format=ExportFormat.MATRIX
+    )
+    artifact = await service.export(
+        tenant_id=tenant_id, workspace_id=workspace_id, export_format=ExportFormat.DOCX
+    )
+    assert "Approved answer." in _docx_text(artifact.content)
 
 
 async def test_a_failed_render_does_not_mark_anything_as_exported(workspace, monkeypatch):

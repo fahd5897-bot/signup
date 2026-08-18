@@ -76,6 +76,54 @@ def test_arabic_documents_carry_the_markers_that_make_them_right_to_left():
     assert ARABIC_ANSWER in xml
 
 
+def test_an_arabic_answer_inside_an_english_workspace_is_still_right_to_left():
+    """The case a whole-document test cannot catch.
+
+    A GCC tender is routinely Arabic prose with English standard references,
+    and answers come back in either script inside one workspace. Deciding
+    direction once from the workspace language gets it wrong for every
+    paragraph in the other language — and the document still looks plausible,
+    because the glyphs are correct and only the run order is not.
+    """
+    content = build_response_docx(
+        _bundle(
+            Language.EN,
+            _row(),
+            _row(
+                requirement_ref="2.1.04",
+                requirement_text="يلتزم المقاول بتقديم ضمان بنكي بنسبة ٥٪ من قيمة العقد.",
+                answer_text=ARABIC_ANSWER,
+            ),
+        )
+    )
+    xml = _docx_xml(content)
+
+    assert "<w:bidi/>" in xml
+    assert "<w:rtl/>" in xml
+    assert ARABIC_ANSWER in xml
+    assert ENGLISH_ANSWER in xml
+
+
+def test_an_arabic_sentence_quoting_a_latin_standard_stays_right_to_left():
+    """Mostly-Latin by character count, still an Arabic sentence.
+
+    A low threshold is deliberate: at a majority rule this paragraph flips to
+    left-to-right and its full stop lands on the wrong end.
+    """
+    mixed = "نعم، نمتلك شهادة ISO/IEC 27001:2022 رقم 12345."
+    xml = _docx_xml(build_response_docx(_bundle(Language.EN, _row(answer_text=mixed))))
+    assert "<w:rtl/>" in xml
+
+
+def test_the_complex_script_font_is_set_even_for_an_english_workspace():
+    """One submission carries both scripts; branching on the document language
+    leaves the other to whatever the evaluator's machine substitutes."""
+    content = build_response_docx(_bundle(Language.EN, _row(answer_text=ARABIC_ANSWER)))
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        styles = archive.read("word/styles.xml").decode("utf-8")
+    assert 'w:cs="Arial"' in styles
+
+
 def test_english_documents_are_not_marked_right_to_left():
     xml = _docx_xml(build_response_docx(_bundle(Language.EN, _row())))
     assert "<w:bidi/>" not in xml

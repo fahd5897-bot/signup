@@ -27,6 +27,7 @@ from app.api.v1.routers import (
     health,
     requirements,
     review,
+    workspaces,
 )
 from app.core.config import get_settings
 from app.rag.vectorstore.collections import QdrantCollectionManager, build_client
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
     app.include_router(requirements.router, prefix="/api/v1")
     app.include_router(review.router, prefix="/api/v1")
     app.include_router(exports.router, prefix="/api/v1")
+    app.include_router(workspaces.router, prefix="/api/v1")
     return app
 
 
@@ -107,8 +109,12 @@ def _configure_cors(app: FastAPI, settings) -> None:
       this flag the browser strips the cookie and every request is a 401.
 
     * **``expose_headers``.** Response headers are invisible to JS unless named
-      here. ``X-Request-ID`` is what makes a user-reported failure traceable to
-      a server log line.
+      here, and the failure is silent: the header arrives, the browser drops it,
+      and the client falls back to a default as though the server never sent
+      one. ``X-Request-ID`` is what makes a user-reported failure traceable to a
+      server log line; ``Content-Disposition`` is what gives an exported
+      submission its real filename instead of a generic fallback, which on a
+      document going to a procurement authority is not cosmetic.
     """
     if not settings.cors_origins:
         logger.warning("CORS_ORIGINS is empty; browser clients will be blocked")
@@ -121,7 +127,12 @@ def _configure_cors(app: FastAPI, settings) -> None:
         # triggers a preflight, and OPTIONS must be answered for it.
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-        expose_headers=["X-Request-ID"],
+        expose_headers=[
+            "X-Request-ID",
+            "Content-Disposition",
+            "X-Export-Answered",
+            "X-Export-Uncited",
+        ],
         # Cache the preflight for 10 minutes. Without it the browser preflights
         # every single generate-answer call, doubling request count on the
         # busiest path in the product.
