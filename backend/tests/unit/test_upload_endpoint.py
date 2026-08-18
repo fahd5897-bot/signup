@@ -186,3 +186,66 @@ async def test_storage_key_is_tenant_prefixed_and_filename_safe() -> None:
     # Arabic filenames must survive intact — mangling them would make every
     # document unrecognisable to the customer who uploaded it.
     assert storage.build_storage_key("t", "d", "كراسة.pdf").endswith("كراسة.pdf")
+
+
+async def test_delete_uses_the_shared_qdrant_client(monkeypatch, settings) -> None:
+    """The router must hand over `app.state.qdrant`.
+
+    Building a client inside the service opens a fresh connection pool for
+    every deletion — and, more subtly, a *different* store than the one the
+    application indexed into whenever the two are configured independently.
+    A caller that forgets is invisible until someone counts connections.
+    """
+    seen: dict[str, object] = {}
+
+    class _FakeService:
+        def __init__(self, *args, **kwargs) -> None: ...
+
+        async def delete(self, *, tenant_id, document_id, qdrant=None) -> None:
+            seen["qdrant"] = qdrant
+
+    monkeypatch.setattr(documents_router, "DocumentService", _FakeService)
+
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(documents_router.router, prefix="/api/v1")
+    sentinel = object()
+    app.state.qdrant = sentinel
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.delete(
+            f"/api/v1/documents/{uuid.uuid4()}", headers=_token(settings, "owner")
+        )
+
+    assert response.status_code == 204
+    assert seen["qdrant"] is sentinel
+
+
+@pytest.mark.parametrize("role", ["sme", "viewer"])
+async def test_only_managers_may_delete_a_source(monkeypatch, settings, role) -> None:
+    """Removing a source silently changes what every future answer can be
+    grounded in, and leaves existing citations pointing at nothing."""
+
+    class _FakeService:
+        def __init__(self, *args, **kwargs) -> None: ...
+
+        async def delete(self, **kwargs) -> None:
+            raise AssertionError("must not be reached")
+
+    monkeypatch.setattr(documents_router, "DocumentService", _FakeService)
+
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(documents_router.router, prefix="/api/v1")
+    app.state.qdrant = object()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.delete(
+            f"/api/v1/documents/{uuid.uuid4()}", headers=_token(settings, role)
+        )
+
+    assert response.status_code == 403

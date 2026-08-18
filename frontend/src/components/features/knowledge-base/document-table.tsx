@@ -1,10 +1,14 @@
 "use client";
 
-import { AlertTriangle, FileSpreadsheet, FileText, FileType } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet, FileText, FileType, Loader2, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
+import * as React from "react";
+
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { DocumentSummary } from "@/lib/api/types";
+import { useDeleteDocument } from "@/lib/hooks/use-documents";
 import { cn } from "@/lib/utils/cn";
 
 const TERMINAL_OK = new Set(["ready"]);
@@ -44,6 +48,11 @@ export function DocumentTable({ documents }: { documents: DocumentSummary[] }) {
             <th className="px-4 py-2.5 text-end font-medium">{t("columns.pages")}</th>
             <th className="px-4 py-2.5 text-end font-medium">{t("columns.chunks")}</th>
             <th className="px-4 py-2.5 text-start font-medium">{t("columns.quality")}</th>
+            {/* No header text: the column holds one icon control, and a label
+                would read as a data column in a screen reader's table summary. */}
+            <th className="px-4 py-2.5">
+              <span className="sr-only">{t("columns.actions")}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -61,7 +70,14 @@ export function DocumentTable({ documents }: { documents: DocumentSummary[] }) {
                     </span>
                   </div>
                   {doc.failure_reason && (
-                    <p className="mt-1 text-xs text-destructive">{doc.failure_reason}</p>
+                    // Server-generated text whose language does not follow the
+                    // interface locale: an English parser message inside an
+                    // Arabic layout lands its full stop on the wrong end
+                    // without this, which reads as a rendering fault in the
+                    // one place the reader is already worried.
+                    <p dir="auto" className="bidi-isolate mt-1 text-xs text-destructive">
+                      {doc.failure_reason}
+                    </p>
                   )}
                 </td>
 
@@ -123,11 +139,68 @@ export function DocumentTable({ documents }: { documents: DocumentSummary[] }) {
                     </span>
                   )}
                 </td>
+
+                <td className="px-4 py-3 text-end">
+                  <DeleteDocumentButton document={doc} />
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+
+/**
+ * Two-step removal, in place.
+ *
+ * A confirmation rather than a single click, because this purges the
+ * document's chunks from the vector store: answers already citing it keep a
+ * citation that no longer resolves. Two steps in the row instead of a modal —
+ * a dialog for one destructive action on one row is more ceremony than the
+ * decision needs, and modals in a right-to-left layout are their own bug farm.
+ */
+function DeleteDocumentButton({ document }: { document: DocumentSummary }) {
+  const t = useTranslations("knowledgeBase");
+  const remove = useDeleteDocument();
+  const [confirming, setConfirming] = React.useState(false);
+
+  // Drop back out of the armed state if the reviewer moves on without
+  // deciding, so a stray click minutes later cannot delete anything.
+  React.useEffect(() => {
+    if (!confirming) return;
+    const timer = setTimeout(() => setConfirming(false), 5000);
+    return () => clearTimeout(timer);
+  }, [confirming]);
+
+  if (remove.isPending) {
+    return <Loader2 className="ms-auto size-4 animate-spin text-muted-foreground" aria-hidden />;
+  }
+
+  if (confirming) {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        className="text-unverified"
+        onClick={() => remove.mutate(document.id)}
+      >
+        {t("confirmDelete")}
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      onClick={() => setConfirming(true)}
+      aria-label={t("deleteDocument", { name: document.filename })}
+      title={t("delete")}
+    >
+      <Trash2 aria-hidden />
+    </Button>
   );
 }

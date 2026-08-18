@@ -295,6 +295,11 @@ export const api = {
     });
   },
 
+  /** Remove a document and everything indexed from it. */
+  deleteDocument(documentId: string) {
+    return request<void>(`/documents/${documentId}`, { method: "DELETE" });
+  },
+
   getDocumentStatus(documentId: string) {
     return request<DocumentStatusRead>(`/documents/${documentId}/status`);
   },

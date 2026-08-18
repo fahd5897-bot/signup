@@ -23,8 +23,12 @@
       "language": "اللغة",
       "pages": "الصفحات",
       "chunks": "المفهرس",
-      "quality": "جودة النص"
-    }
+      "quality": "جودة النص",
+      "actions": "إجراءات"
+    },
+    "delete": "حذف",
+    "deleteDocument": "حذف {name}",
+    "confirmDelete": "حذف نهائي؟"
   },
   "status": {
     "pending": "معلّق",

@@ -102,7 +102,11 @@ export function ProposalDetail({
           {/* The reason, verbatim from the backend. An abstention with no
               stated cause is the thing a reviewer skims past. */}
           <p className="font-medium">{t("abstained")}</p>
-          <p className="mt-1 text-muted-foreground">{proposal.abstention_reason}</p>
+          {/* The reason comes from the backend in its own language, which is
+              not necessarily the reviewer's. */}
+          <p dir="auto" className="bidi-isolate mt-1 text-muted-foreground">
+            {proposal.abstention_reason}
+          </p>
         </div>
       )}
 

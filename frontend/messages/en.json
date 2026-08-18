@@ -23,8 +23,12 @@
       "language": "Language",
       "pages": "Pages",
       "chunks": "Indexed",
-      "quality": "Text quality"
-    }
+      "quality": "Text quality",
+      "actions": "Actions"
+    },
+    "delete": "Delete",
+    "deleteDocument": "Delete {name}",
+    "confirmDelete": "Delete permanently?"
   },
   "status": {
     "pending": "Pending",

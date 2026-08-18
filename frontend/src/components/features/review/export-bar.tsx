@@ -116,7 +116,7 @@ export function ExportBar({ workspaceId }: { workspaceId: string }) {
       )}
 
       {error !== null && (
-        <p role="alert" className="text-xs text-unverified">
+        <p role="alert" dir="auto" className="bidi-isolate text-xs text-unverified">
           {t(reviewErrorKey(error))}
           {error instanceof ApiRequestError && error.detail ? ` — ${error.detail}` : ""}
         </p>

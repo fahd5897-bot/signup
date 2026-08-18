@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "@/lib/api/client";
 import type { DocumentRole } from "@/lib/api/types";
@@ -28,6 +28,26 @@ export function useDocuments(params: { role?: DocumentRole; workspaceId?: string
         (doc) => !["ready", "failed", "quarantined"].includes(doc.status),
       );
       return busy ? 4000 : false;
+    },
+  });
+}
+
+
+/**
+ * Remove a document and everything indexed from it.
+ *
+ * Not undoable from the interface, and not cosmetic: the chunks are purged
+ * from the vector store, so answers already citing this source keep a citation
+ * that no longer resolves. That is the correct trade — a customer removing a
+ * file has usually decided it must not be quoted again — but it is why the
+ * control asks first.
+ */
+export function useDeleteDocument() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (documentId: string) => api.deleteDocument(documentId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["documents"] });
     },
   });
 }

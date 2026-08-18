@@ -202,7 +202,12 @@ async def delete_document(
     if user.role not in (UserRole.OWNER, UserRole.BID_MANAGER):
         raise PermissionDeniedError("your role cannot delete documents")
 
-    await DocumentService(settings).delete(tenant_id=user.tenant_id, document_id=document_id)
+    await DocumentService(settings).delete(
+        tenant_id=user.tenant_id,
+        document_id=document_id,
+        # The process-wide client, not a fresh connection pool per deletion.
+        qdrant=request.app.state.qdrant,
+    )
     logger.info("document %s deleted by %s", document_id, user.id)
 
 

@@ -60,6 +60,9 @@ export function TenderSetup({ workspaceId }: { workspaceId: string }) {
               className="h-9 rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {ready.map((doc) => (
+                // A filename is the customer's own text and may be in
+                // either script; the select carries dir="auto" for the same
+                // reason every other document name does.
                 <option key={doc.id} value={doc.id}>
                   {doc.filename}
                 </option>
