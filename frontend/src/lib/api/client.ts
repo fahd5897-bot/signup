@@ -1,8 +1,10 @@
 import type {
   ApiError,
+  AuthenticatedUser,
   DocumentStatusRead,
   GeneratedAnswer,
   TaskAccepted,
+  TokenPair,
 } from "@/lib/api/types";
 
 /**
@@ -67,6 +69,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  /**
+   * Create an organisation and its first user, who becomes the owner.
+   *
+   * The response body carries tokens for non-browser clients, but the browser
+   * relies on the httpOnly cookies the server sets alongside them — those are
+   * unreadable from JavaScript, so an XSS cannot lift the session.
+   */
+  register(body: {
+    organisation_name: string;
+    full_name: string;
+    email: string;
+    password: string;
+  }) {
+    return request<TokenPair>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  login(body: { email: string; password: string; tenant_slug?: string }) {
+    return request<TokenPair>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  logout() {
+    return request<void>("/auth/logout", { method: "POST" });
+  },
+
+  /** Current user, resolved from the session cookie. */
+  me() {
+    return request<AuthenticatedUser>("/auth/me");
+  },
+
   /**
    * Upload one document. Returns 202 — ingestion is asynchronous, so the
    * caller polls `poll_url` until the status is terminal.

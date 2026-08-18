@@ -77,5 +77,35 @@
     "cancel": "Cancel",
     "close": "Close",
     "of": "of"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signUp": "Create account",
+    "loginTitle": "Sign in",
+    "loginSubtitle": "Access your tender workspace.",
+    "registerTitle": "Create your organisation",
+    "registerSubtitle": "You will be the owner and can invite your team afterwards.",
+    "organisationName": "Organisation name",
+    "fullName": "Your name",
+    "email": "Work email",
+    "password": "Password",
+    "passwordHint": "At least 12 characters. Length matters more than symbols.",
+    "tenantSlug": "Organisation",
+    "tenantSlugHint": "Only needed if this email belongs to more than one organisation.",
+    "noAccount": "Don't have an account?",
+    "haveAccount": "Already have an account?",
+    "submitting": "Please wait…",
+    "signOut": "Sign out",
+    "errors": {
+      "invalidCredentials": "Email or password is incorrect.",
+      "emailTaken": "An account with this email already exists here.",
+      "slugTaken": "That organisation name is taken.",
+      "validation": "Please check the fields above.",
+      "network": "Could not reach the server. Check your connection and try again.",
+      "unknown": "Something went wrong. Please try again.",
+      "required": "This field is required.",
+      "emailInvalid": "Enter a valid email address.",
+      "passwordShort": "Password must be at least 12 characters."
+    }
   }
 }

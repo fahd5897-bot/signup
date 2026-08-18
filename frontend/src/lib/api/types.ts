@@ -118,6 +118,26 @@ export interface TaskAccepted {
   poll_url: string;
 }
 
+export type UserRole = "owner" | "bid_manager" | "sme" | "viewer";
+
+/** Mirrors `app/schemas/auth.py::AuthenticatedUser`. */
+export interface AuthenticatedUser {
+  id: string;
+  tenant_id: string;
+  email: string;
+  role: UserRole;
+}
+
+/** Mirrors `app/schemas/auth.py::TokenPair`. */
+export interface TokenPair {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  /** Access-token lifetime in seconds. */
+  expires_in: number;
+  user: AuthenticatedUser;
+}
+
 /** RFC 9457-shaped error body from the global handler. */
 export interface ApiError {
   type: string;

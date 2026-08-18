@@ -1,9 +1,10 @@
 "use client";
 
-import { Globe } from "lucide-react";
+import { Globe, LogOut } from "lucide-react";
 import { useTranslations } from "next-intl";
 
-import { Link, usePathname } from "@/i18n/navigation";
+import { Link, usePathname, useRouter } from "@/i18n/navigation";
+import { useLogout, useSession } from "@/lib/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import type { Locale } from "@/i18n/routing";
 
@@ -17,8 +18,15 @@ const TITLE_KEYS = [
 
 export function Topbar({ locale, title }: { locale: Locale; title?: string }) {
   const t = useTranslations("nav");
+  const tAuth = useTranslations("auth");
   const pathname = usePathname();
+  const router = useRouter();
+  const { user } = useSession();
+  const logout = useLogout();
   const other: Locale = locale === "ar" ? "en" : "ar";
+
+  // Initials from the signed-in user, not a hardcoded placeholder.
+  const initials = (user?.email ?? "?").slice(0, 2).toUpperCase();
 
   // Derived from the route rather than threaded down from each page, so a new
   // page cannot ship with the wrong heading by forgetting to pass one.
@@ -45,10 +53,22 @@ export function Topbar({ locale, title }: { locale: Locale; title?: string }) {
         </Button>
         <div
           className="size-8 rounded-full bg-secondary text-center text-xs font-medium leading-8 text-secondary-foreground"
-          aria-hidden
+          title={user?.email}
         >
-          FA
+          {initials}
         </div>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={tAuth("signOut")}
+          disabled={logout.isPending}
+          onClick={() =>
+            logout.mutate(undefined, { onSettled: () => router.push("/login") })
+          }
+        >
+          <LogOut className="size-4" aria-hidden />
+        </Button>
       </div>
     </header>
   );
