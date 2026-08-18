@@ -1,108 +1,137 @@
 # Running it locally
 
-There is no hosted URL yet — nothing is deployed. Everything below runs on your
-own machine.
+There is no hosted URL — nothing is deployed. Everything below runs on your own
+machine.
 
-Pick the tier that matches what you want to see. Tier 1 needs nothing but Node
-and takes about two minutes.
+Two paths. The first runs the whole stack and is what you want if you intend to
+use the product. The second runs the interface alone, in two minutes, if you
+only want to look at it.
 
 ---
 
-## Tier 1 — the interface only (~2 min)
+## The whole stack, with Docker (~10 min, mostly image pulls)
 
-Shows every screen with placeholder data: sidebar, Knowledge Base with
-drag-and-drop, and the tender workspace. **Requires only Node 20.9+.**
+Needs Docker, an Anthropic API key, and a Voyage API key (Anthropic ships no
+embedding model — see ADR-0001 in `ARCHITECTURE.md`).
 
 ```bash
 git clone https://github.com/fahd5897-bot/signup.git
-cd signup/frontend
+cd signup
 git checkout claude/genai-rfp-saas-architecture-iguf8d
 
+cp .env.example .env
+# Fill in ANTHROPIC_API_KEY and VOYAGE_API_KEY, then generate a real secret:
+python -c "import secrets; print(secrets.token_urlsafe(48))"   # -> JWT_SECRET
+
+# Datastores first, so the migration has something to run against.
+docker compose up -d db redis qdrant minio minio-init
+
+# Schema, row-level security policies, and the auth lookup function.
+docker compose run --rm api alembic upgrade head
+
+docker compose up -d
+```
+
+Open **http://localhost:3000**, register an account, and work through:
+
+1. **Knowledge Base** — upload your company's capability documents, certificates,
+   and past responses. Ingestion is asynchronous; the table shows live status
+   and a text-quality ratio that tells you whether a scanned Arabic PDF actually
+   extracted.
+2. Upload the **tender** itself with role `tender`, then extract its
+   requirements — the compliance matrix appears with every clause outstanding.
+3. **Generate** answers. Each one is grounded in your own documents and carries
+   citations, or it abstains and says why. Neither outcome is approved.
+4. **Review** each answer and approve it. Nothing can be approved without a
+   citation unless you explicitly state in writing that you are vouching for it
+   yourself.
+5. **Export** — DOCX, PDF, or the compliance matrix. Blocked until every
+   mandatory requirement is approved, with no override.
+
+The API's own docs are at **http://localhost:8000/docs**.
+
+`JWT_SECRET` has no default in `docker-compose.yml` on purpose: a placeholder
+that works locally is a placeholder that reaches production, and the config
+validator refuses a short or well-known value at startup.
+
+---
+
+## The interface alone (~2 min)
+
+Every screen, with no backend behind it. Needs only Node 22.
+
+```bash
+cd signup/frontend
 npm install
 npm run dev
 ```
 
 Open **http://localhost:3000** — it redirects to `/en/knowledge-base`.
 
-Worth visiting:
-
 | URL | What it shows |
 |---|---|
-| `/en/knowledge-base` | Upload dropzone + document table with the text-quality column |
-| `/ar/knowledge-base` | The same screen fully mirrored in Arabic |
+| `/en/knowledge-base` | Upload dropzone and the document table |
+| `/ar/knowledge-base` | The same screen, fully mirrored in Arabic |
 | `/en/tenders` | Tender list |
-| `/en/tenders/3f8a1c92-5b47-4e21-9d63-8a2f7c104e55` | The split-view workspace |
 
-**What will not work in Tier 1:** uploading a file (the request fails — no
-backend), and "Auto-fill Questionnaire" (same). You will see the loading
-skeleton and then an error. That is expected here.
+Uploading and generating will fail here: there is no API to call. That is
+expected on this path.
 
 ---
 
-## Tier 2 — with the backend (~10 min)
-
-Lets you exercise the generation flow. Needs Python 3.12, Docker, and an
-Anthropic API key.
+## Running it without Docker
 
 ```bash
-# 1. datastores
-docker run -d -p 6333:6333 qdrant/qdrant
-docker run -d -p 6379:6379 redis:7
-
-# 2. backend
 cd signup/backend
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
-# system dependencies for Arabic OCR (macOS shown; apt on Linux)
-brew install tesseract tesseract-lang poppler
+# System dependencies. Arabic OCR for scanned tenders, and Pango/Cairo for PDF
+# export. macOS shown; on Debian see backend/docker/Dockerfile for the apt list.
+brew install tesseract tesseract-lang poppler pango cairo gdk-pixbuf
 
-cp ../.env.example ../.env      # then fill in ANTHROPIC_API_KEY and VOYAGE_API_KEY
-
-# create the schema and the row-level security policies
+# PostgreSQL, Redis, Qdrant, and MinIO must be reachable at the URLs in .env.
 alembic upgrade head
-
 uvicorn app.main:app --reload --port 8000
-
-# 3. frontend, in a second terminal
-cd signup/frontend
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1 npm run dev
 ```
 
-**Known blockers in Tier 2**, all documented in the phase-6 review:
-
-- **There is no login.** `app/security/` is empty and no `/auth/login` endpoint
-  exists, so nothing issues a token. Every request returns 401 until you mint a
-  token by hand with the `JWT_SECRET` from your `.env`.
-- **Nothing persists.** Generated answers are returned to the browser and lost
-  on refresh; the service layer that would save them is not built.
-
-So Tier 2 demonstrates *upload → parse → index → generate → cite*, and nothing
-past that.
+Run the API as an unprivileged PostgreSQL role, not as the table owner. The
+policies are `FORCE ROW LEVEL SECURITY` so the owner is bound by them too, but
+the GRANT separation is real and the first place it should be exercised is not
+production. `infra/postgres/init/01-application-role.sh` is the role Compose
+creates.
 
 ---
 
-## What is actually finished
-
-| Working | Not built yet |
-|---|---|
-| Arabic/English parsing, chunking, indexing | Authentication (no login at all) |
-| Grounded generation with citations | Persistence (service layer) |
-| The four anti-hallucination gates | Review / approve / export |
-| Database schema + row-level security | Requirement extraction from the tender |
-| Full UI in both languages | |
-| CORS and the API integration layer | |
-
-### Running the isolation tests
-
-The row-level security policies are covered by tests that need a real
-PostgreSQL — they are skipped automatically when none is reachable, because a
-policy asserted only in Python is not a security control.
+## Tests
 
 ```bash
-TEST_POSTGRES_DSN=postgresql+asyncpg://postgres@127.0.0.1:5432/rfp \
-  pytest tests/integration -v
+cd backend
+pytest -q                        # unit tests; integration ones skip themselves
+
+# With a real PostgreSQL, the row-level security and gate tests run too. A
+# policy asserted only in Python is a comment, not a security control.
+TEST_POSTGRES_DSN=postgresql+asyncpg://postgres@127.0.0.1:5432/rfp pytest -q
+
+ruff check . && ruff format --check .
+python scripts/check_filter_usage.py   # every Qdrant filter is tenant-scoped
 ```
 
-**No user can log in and complete a tender today.** See the phase-6 summary for
-the full gap list and the suggested build order.
+The same three run in CI on every push, against a real PostgreSQL with an
+unprivileged role, plus a `downgrade base` round trip to prove the migrations
+reverse.
+
+---
+
+## What is built
+
+| Working end to end | Not built |
+|---|---|
+| Registration, login, roles, tenant isolation via RLS | Billing and plan enforcement |
+| Arabic/English parsing, chunking, hybrid indexing | Go/No-Go analysis (the screen is a placeholder) |
+| Requirement extraction into a compliance matrix | Tenant-branded export templates |
+| Grounded generation with citations, or a stated abstention | Batch generation across a whole tender |
+| Review, edit, approve, reject, escalate to an SME | SSO |
+| Export to DOCX, PDF, and the compliance matrix | Kubernetes/Terraform deployment |
+| The four anti-hallucination gates, plus the approval gate | |
+| Full UI in Arabic and English | |

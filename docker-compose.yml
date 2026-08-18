@@ -1,0 +1,155 @@
+# Local stack: everything the application talks to, plus the application.
+#
+# The point of this file is that "works on my machine" and "works in staging"
+# describe the same topology. Two things in particular are not simplified away:
+# the API connects as an unprivileged PostgreSQL role, so Row-Level Security is
+# actually in force locally, and MinIO stands in for S3 so the object-storage
+# path is exercised rather than stubbed.
+#
+#   docker compose up -d db redis qdrant minio   # dependencies only
+#   docker compose run --rm api alembic upgrade head
+#   docker compose up -d                         # everything
+
+name: rfp-platform
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: rfp
+      # Read by the init script below, which creates the role with this
+      # password — so the role and the DSN the API uses cannot drift apart.
+      RFP_APP_PASSWORD: ${RFP_APP_PASSWORD:-rfp_app}
+    ports: ["5432:5432"]
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Creates the unprivileged application role on first boot. Running the
+      # app as the table owner would make every RLS policy untested locally:
+      # the tables are FORCE ROW LEVEL SECURITY, but the difference between
+      # owner and application role still matters for GRANTs.
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rfp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # No persistence: the queue is a work list, not a system of record. A
+    # restart should lose in-flight jobs rather than replay stale ones.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:v1.16.1
+    ports: ["6333:6333", "6334:6334"]
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      # Qdrant's image has no shell utilities beyond this; /readyz is the
+      # endpoint it documents for orchestrators.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e 'GET /readyz HTTP/1.0\\n\\n' >&3 && head -1 <&3 | grep -q 200"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports: ["9000:9000", "9001:9001"]
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY:-minioadmin} ${S3_SECRET_KEY:-minioadmin} &&
+      mc mb --ignore-existing local/${S3_BUCKET:-rfp-documents} &&
+      echo 'bucket ready'
+      "
+    restart: "no"
+
+  api: &backend
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile
+    environment: &backend-env
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      # The application role, not postgres. This is what makes the RLS
+      # policies load-bearing in local development rather than decorative.
+      POSTGRES_DSN: postgresql+asyncpg://rfp_app:${RFP_APP_PASSWORD:-rfp_app}@db:5432/rfp
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: ${S3_BUCKET:-rfp-documents}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      # No defaults for these three. A placeholder secret that works locally is
+      # a placeholder secret that reaches production; the config validator
+      # refuses a short or well-known JWT_SECRET at startup.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:?set VOYAGE_API_KEY in .env}
+      JWT_SECRET: ${JWT_SECRET:?generate one with python -c 'import secrets; print(secrets.token_urlsafe(48))'}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      qdrant: {condition: service_healthy}
+      minio: {condition: service_healthy}
+    ports: ["8000:8000"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  worker:
+    <<: *backend
+    environment: *backend-env
+    ports: []
+    # Concurrency 2, not the CPU count: each task holds a parsed document and
+    # its embeddings in memory, and a 400-page scanned tender is hundreds of
+    # megabytes. Oversubscribing here shows up as an OOM kill mid-ingestion.
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Next.js inlines NEXT_PUBLIC_* at build time, so this must be a build
+        # argument. Setting it only at run time produces a bundle that calls
+        # the wrong host, and the failure is silent in the browser.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - api
+    ports: ["3000:3000"]
+
+volumes:
+  db-data:
+  qdrant-data:
+  minio-data:
