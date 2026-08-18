@@ -9,7 +9,7 @@ Arabic and English throughout.
 |---|---|
 | Frontend | Next.js 16 (App Router), Tailwind v4, shadcn/ui, next-intl |
 | Backend | FastAPI, Celery |
-| AI | Claude Opus 5 (generation) / Haiku 4.5 (extraction), LangChain 1.x |
+| AI | Claude Opus 5 (generation) / Haiku 4.5 (extraction), Anthropic SDK directly |
 | Data | PostgreSQL + RLS (metadata), Qdrant (vectors), Redis, S3 |
 | Parsing | Unstructured.io — Arabic OCR + table structure inference |
 

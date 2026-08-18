@@ -11,10 +11,25 @@ Three corrections were made before scaffolding. Each is load-bearing.
 | Brief said | Reality | Why it changes |
 |---|---|---|
 | Claude 3.5 Sonnet | **`claude-opus-5`** for generation, **`claude-haiku-4-5`** for extraction/classification | Claude 3.5 Sonnet is retired. Current IDs are `claude-opus-5` ($5/$25 per MTok, 1M ctx), `claude-sonnet-5` ($3/$15), `claude-haiku-4-5` ($1/$5, 200K ctx). Opus 5 also unlocks adaptive thinking and effort control, which directly serve the accuracy constraint. |
-| "LangChain + Claude for RAG" | LangChain orchestrates; **native Anthropic SDK owns the grounded-generation call** | Anthropic's document `citations` feature returns `cited_text` plus exact `char_location` / `page_location` per claim, computed server-side. That is the single strongest anti-hallucination primitive available, and it is not exposed through the LangChain chat abstraction. See ADR-0001. |
+| "LangChain + Claude for RAG" | **The native Anthropic SDK owns the whole path.** LangChain is pinned but currently unused — see the note below | Anthropic's document `citations` feature returns `cited_text` plus exact `char_location` / `page_location` per claim, computed server-side. That is the single strongest anti-hallucination primitive available, and it is not exposed through the LangChain chat abstraction. See ADR-0001. |
 | Qdrant for embeddings | Qdrant, but **embeddings come from Voyage** (`voyage-multilingual-2`) | Anthropic ships no embedding model. Voyage is the Anthropic-recommended partner and is genuinely strong on Arabic. `bge-m3` self-hosted is the data-residency fallback (some GCC tenders require in-country processing). |
 
-LangChain 1.x is a breaking rewrite of 0.x — most tutorials you will find are for 0.x and will not run. Pins are exact for this reason.
+**On LangChain.** The brief named it, and it is pinned in `requirements.txt`, but
+no module imports it today: the chains in `rag/chains/` are plain async Python
+calling the Anthropic SDK. That happened because every stage that LangChain
+would have orchestrated needs something the chat abstraction hides — the
+`search_result` content blocks that produce server-computed citations, the
+`thinking` and `effort` controls the abstention judgement depends on, and the
+exact `stop_reason` the verifier branches on. Orchestrating four steps in
+Python turned out to be less code than working around that.
+
+It is left in the pins rather than removed because dropping a dependency the
+brief asked for is the customer's call, not ours. If it stays unused, removing
+it and its transitive tree (langgraph, langsmith) is a worthwhile cut: they are
+a large share of install time and image size for code that never runs.
+
+LangChain 1.x is a breaking rewrite of 0.x — most tutorials you will find are
+for 0.x and will not run. Pins are exact for that reason.
 
 ---
 
@@ -121,7 +136,7 @@ backend/
 │   │   │   ├── system_ar.py
 │   │   │   ├── requirement_extraction.py
 │   │   │   └── answer_generation.py
-│   │   ├── chains/                   # LangChain LCEL orchestration
+│   │   ├── chains/                   # plain async orchestration (see note above)
 │   │   │   ├── extract_requirements.py
 │   │   │   ├── answer_requirement.py
 │   │   │   └── compliance_matrix.py
@@ -371,8 +386,8 @@ A model that is merely *asked* to cite will invent citations. Because the offset
 
 | ADR | Decision |
 |---|---|
-| 0001 | Anthropic SDK owns generation; LangChain owns orchestration — native citations are unavailable through the chat abstraction |
-| 0002 | LangChain 1.x pinned exactly; 0.x tutorials do not apply |
+| 0001 | Anthropic SDK owns generation *and* orchestration — native citations, adaptive thinking, and `stop_reason` are all unavailable through the chat abstraction |
+| 0002 | LangChain 1.x pinned exactly but currently unused; 0.x tutorials do not apply |
 | 0003 | Stream all generation calls — 64K `max_tokens` exceeds non-streaming HTTP timeouts |
 | 0004 | `tiktoken` is used for rough budgeting only; exact counts come from `messages.count_tokens` |
 | 0005 | Single Qdrant collection with tenant payload index, not collection-per-tenant |
