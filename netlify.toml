@@ -1,0 +1,36 @@
+# Netlify build configuration.
+#
+# This file is the source of truth. Anything typed into the Netlify UI's build
+# settings is overridden by what is here, so the deploy config lives in the
+# repo and is reviewable — rather than in a web form nobody can diff.
+#
+# The app is NOT a static site: it uses server-rendered routes and a proxy
+# (middleware) for locale negotiation, so `output: "export"` is not an option.
+# Netlify's Next.js runtime is auto-installed on detection and handles both.
+
+[build]
+  # The Next.js app lives in a subdirectory; the repo root has no package.json.
+  base = "frontend"
+  command = "npm run build"
+  # Relative to the repo root, not to `base`.
+  publish = "frontend/.next"
+
+[build.environment]
+  # package.json requires >=20.9. Pinning avoids a silent failure whenever
+  # Netlify moves its default.
+  NODE_VERSION = "22"
+
+  # There is no backend deployed yet. Left unset, the client falls back to the
+  # same-origin path "/api/v1", which 404s on Netlify — uploads and answer
+  # generation will fail with a network error. Point this at a public API URL
+  # once one exists.
+  # NEXT_PUBLIC_API_BASE_URL = "https://api.example.com/api/v1"
+
+# Security headers. Cheap here, and this app will eventually serve documents
+# that are commercially confidential.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
