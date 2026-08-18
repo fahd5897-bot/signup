@@ -15,6 +15,7 @@ from typing import Final
 from qdrant_client import AsyncQdrantClient, models
 
 from app.core.config import Settings, get_settings
+from app.rag.vectorstore.filters import build_document_filter, build_tenant_only_filter
 from app.rag.vectorstore.schema import PayloadField, VectorName
 
 logger = logging.getLogger(__name__)
@@ -191,16 +192,7 @@ class QdrantCollectionManager:
         """
         await self._client.delete(
             collection_name=self._collection,
-            points_selector=models.FilterSelector(
-                filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key=PayloadField.TENANT_ID,
-                            match=models.MatchValue(value=tenant_id),
-                        )
-                    ]
-                )
-            ),
+            points_selector=models.FilterSelector(filter=build_tenant_only_filter(tenant_id)),
             wait=True,
         )
         logger.info("deleted all vectors for tenant %s", tenant_id)
@@ -215,18 +207,7 @@ class QdrantCollectionManager:
         await self._client.delete(
             collection_name=self._collection,
             points_selector=models.FilterSelector(
-                filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key=PayloadField.TENANT_ID,
-                            match=models.MatchValue(value=tenant_id),
-                        ),
-                        models.FieldCondition(
-                            key=PayloadField.DOCUMENT_ID,
-                            match=models.MatchValue(value=document_id),
-                        ),
-                    ]
-                )
+                filter=build_document_filter(tenant_id, document_id)
             ),
             wait=True,
         )

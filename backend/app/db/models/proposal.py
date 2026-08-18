@@ -182,7 +182,7 @@ class GeneratedProposal(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin, 
     #: Exact model ID that produced this text (e.g. "claude-opus-5"). Required
     #: for reproducibility and for re-running evaluations after a model change.
     model_id: Mapped[str | None] = mapped_column(String(64), default=None)
-    prompt_version: Mapped[str | None] = mapped_column(String(32), default=None)
+    prompt_version: Mapped[str | None] = mapped_column(String(64), default=None)
     input_tokens: Mapped[int | None] = mapped_column(Integer, default=None)
     output_tokens: Mapped[int | None] = mapped_column(Integer, default=None)
     generation_ms: Mapped[int | None] = mapped_column(Integer, default=None)

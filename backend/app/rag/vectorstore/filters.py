@@ -136,3 +136,31 @@ def build_tenant_only_filter(tenant_id: uuid.UUID | str) -> models.Filter:
             )
         ]
     )
+
+
+def build_document_filter(
+    tenant_id: uuid.UUID | str, document_id: uuid.UUID | str
+) -> models.Filter:
+    """One document's points, within one tenant.
+
+    The tenant condition is kept even though ``document_id`` is already unique.
+    Defence in depth: this filter drives deletion, and a malformed or
+    attacker-supplied document ID must not be able to reach another tenant's
+    points.
+    """
+    if not tenant_id:
+        raise TenantScopeError("tenant_id is required")
+    if not document_id:
+        raise TenantScopeError("document_id is required")
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key=PayloadField.TENANT_ID,
+                match=models.MatchValue(value=str(tenant_id)),
+            ),
+            models.FieldCondition(
+                key=PayloadField.DOCUMENT_ID,
+                match=models.MatchValue(value=str(document_id)),
+            ),
+        ]
+    )

@@ -132,6 +132,53 @@ class ProposalReviewAction(StrictModel):
         return self
 
 
+class RequirementExtractionRequest(StrictModel):
+    """Build a workspace's compliance matrix from one ingested tender."""
+
+    document_id: uuid.UUID
+    #: Replace answers that already exist for a re-read requirement. Off by
+    #: default: re-running extraction must not discard a drafted or approved
+    #: answer just because the clause was read again.
+    overwrite_existing: bool = False
+
+
+class ExtractedRequirementRead(APIModel):
+    """One requirement as the reviewer sees it before any answering starts."""
+
+    requirement_ref: str
+    requirement_text: str
+    #: The verbatim span from the tender that this requirement was read from.
+    #: It is checked against the document during extraction, so its presence is
+    #: the evidence that the requirement is genuinely in the tender rather than
+    #: something the model produced.
+    source_text: str
+    is_mandatory: bool
+    category: str
+    section_path: str | None = None
+    page_number: int | None = None
+    #: True when the tender did not number this item and a stable synthetic
+    #: reference was assigned. The reviewer may renumber it.
+    ref_is_synthetic: bool = False
+
+
+class RequirementExtractionResult(APIModel):
+    """What one extraction run produced.
+
+    ``dropped`` is reported rather than hidden: a document with a high drop
+    rate is either badly scanned or is being summarised instead of quoted, and
+    a reviewer needs to know that before trusting the matrix.
+    """
+
+    document_id: uuid.UUID
+    workspace_id: uuid.UUID
+    created: int
+    skipped_existing: int
+    mandatory: int
+    dropped: int
+    windows: int
+    requirements: list[ExtractedRequirementRead]
+
+
 class GroundingMetrics(APIModel):
     """Evidence quality, surfaced to the reviewer rather than hidden in logs.
 
