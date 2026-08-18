@@ -5,7 +5,13 @@ src = ["app", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "ASYNC", "S", "T20"]
-ignore = ["S101"]  # assert is the point of a test file
+ignore = [
+    "S101",  # assert is the point of a test file
+    # PEP 695 type parameters are a style preference, not a correctness
+    # rule, and TypeVar keeps helper modules importable under the 3.11
+    # interpreters people still have lying around locally.
+    "UP047",
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Build-time guards are command-line tools; stdout is their entire interface,

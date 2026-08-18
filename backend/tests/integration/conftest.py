@@ -90,3 +90,46 @@ async def two_tenants(superuser_engine):
     yield a, b
     async with superuser_engine.begin() as conn:
         await conn.execute(text("DELETE FROM tenants WHERE id = ANY(:ids)"), {"ids": [a, b]})
+
+
+@pytest.fixture
+def two_tenants_sync(superuser_engine_sync):
+    """Two tenants, seeded from synchronous code.
+
+    Needed by the Celery task tests: those must run with no ambient event loop,
+    because that is the only situation the worker is ever in, and an async
+    fixture would leave one turning.
+    """
+    from sqlalchemy import text
+
+    a, b = uuid.uuid4(), uuid.uuid4()
+    with superuser_engine_sync.begin() as conn:
+        for tenant_id, name in ((a, "acme"), (b, "globex")):
+            conn.execute(
+                text(
+                    "INSERT INTO tenants (id,name,slug,plan,is_active,default_locale,"
+                    "seats_limit,storage_quota_bytes,monthly_generation_limit,branding) "
+                    "VALUES (:i,:n,:s,'trial',true,'en',5,1073741824,100,'{}')"
+                ),
+                {"i": tenant_id, "n": name, "s": f"{name}-{tenant_id.hex[:8]}"},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO users (id,tenant_id,email,full_name,role,is_active,locale) "
+                    "VALUES (:u,:t,:e,:f,'owner',true,'en')"
+                ),
+                {"u": uuid.uuid4(), "t": tenant_id, "e": f"a@{name}.com", "f": name},
+            )
+    yield a, b
+    with superuser_engine_sync.begin() as conn:
+        conn.execute(text("DELETE FROM tenants WHERE id = ANY(:ids)"), {"ids": [a, b]})
+
+
+@pytest.fixture
+def superuser_engine_sync():
+    """Synchronous owner connection, for fixtures that must not start a loop."""
+    from sqlalchemy import create_engine
+
+    engine = create_engine(TEST_DSN.replace("postgresql+asyncpg", "postgresql+psycopg"))
+    yield engine
+    engine.dispose()

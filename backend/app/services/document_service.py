@@ -124,7 +124,11 @@ class DocumentService:
         Broker failures are logged and swallowed rather than raised: the bytes
         and the row are already committed, so failing the request would tell
         the user their upload was lost when it was not. The document stays at
-        UPLOADED and is picked up by the sweeper.
+        UPLOADED and is re-queued by
+        :func:`app.workers.tasks.sweep.requeue_stalled_uploads`, which is the
+        only reason swallowing here is acceptable — without it the document
+        would sit at UPLOADED forever while the UI polled a status that could
+        never change.
         """
         try:
             from app.workers.tasks.ingest import parse_document_task

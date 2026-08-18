@@ -27,4 +27,25 @@ celery_app.conf.update(
     task_soft_time_limit=3300,  # soft first, so the task can record FAILED
 )
 
-celery_app.autodiscover_tasks(["app.workers.tasks"])
+# Every five minutes. The sweep exists because an upload commits its row
+# before the ingestion job is queued, so a broker outage strands documents at
+# UPLOADED with nothing coming for them — a silent failure that looks to the
+# customer like a slow upload rather than a lost one.
+celery_app.conf.beat_schedule = {
+    "requeue-stalled-uploads": {
+        "task": "sweep.requeue_stalled_uploads",
+        "schedule": 300.0,
+    },
+}
+
+# Explicit, not `autodiscover_tasks`. Autodiscovery looks for a module named
+# `tasks` inside each package it is given, so `autodiscover_tasks(
+# ["app.workers.tasks"])` searched for `app.workers.tasks.tasks` — which does
+# not exist. The worker therefore started with an empty registry and rejected
+# every message as NotRegistered, while the API kept accepting uploads and
+# queueing them. Nothing errored on the request path, so the only symptom was
+# documents that stayed at UPLOADED forever.
+celery_app.conf.imports = (
+    "app.workers.tasks.ingest",
+    "app.workers.tasks.sweep",
+)

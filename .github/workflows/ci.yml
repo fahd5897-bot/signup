@@ -51,7 +51,11 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          # Matches the runtime image (backend/docker/Dockerfile) and the
+          # target-version ruff and mypy are configured for. A CI
+          # interpreter older than the deployed one passes syntax the
+          # image would accept and rejects syntax it would run.
+          python-version: "3.12"
           cache: pip
 
       - name: Install

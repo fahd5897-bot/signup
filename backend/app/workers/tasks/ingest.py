@@ -7,18 +7,18 @@ and is therefore testable without a broker.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 
 from celery import Task
-from celery.exceptions import SoftTimeLimitExceeded
+from celery.exceptions import MaxRetriesExceededError, SoftTimeLimitExceeded
 
 from app.core.config import get_settings
 from app.db.models.enums import DocumentRole, DocumentStatus
 from app.ingestion.pipeline import IngestionPipeline, IngestionResult
 from app.services.storage import ObjectStorage
 from app.workers.celery_app import celery_app
+from app.workers.runner import run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,21 @@ def parse_document_task(
         # Storage failures are transient far more often than not; let Celery
         # back off rather than marking the document permanently failed.
         logger.warning("could not fetch %s: %s", storage_key, exc)
-        raise self.retry(exc=exc) from exc
+        try:
+            raise self.retry(exc=exc) from exc
+        except MaxRetriesExceededError:
+            # Retries exhausted. Without this the document stays at UPLOADED
+            # forever — and the stalled-upload sweeper, seeing exactly that,
+            # re-queues it every five minutes for good, turning one unreadable
+            # object into permanent background load. A terminal state is also
+            # what tells the customer to re-upload instead of waiting.
+            _persist(
+                document_id,
+                tenant_id,
+                DocumentStatus.FAILED,
+                f"the stored file could not be read after repeated attempts: {exc}",
+            )
+            raise
 
     async def _report(doc_id: uuid.UUID, stage: DocumentStatus) -> None:
         """Surface the live stage so the UI shows "Parsing" rather than a
@@ -69,7 +83,7 @@ def parse_document_task(
         )
 
     try:
-        result = asyncio.run(
+        result = run_sync(
             _run_pipeline(
                 status_callback=_report,
                 data=data,
@@ -121,18 +135,63 @@ async def _run_pipeline(status_callback=None, **kwargs) -> IngestionResult:
 
 def _persist(
     document_id: str,
+    tenant_id: str,
     status: DocumentStatus,
     failure_reason: str | None,
     result: IngestionResult | None = None,
 ) -> None:
     """Write the outcome back to the documents row.
 
-    Implemented against DocumentService in Phase 4; the call sites and their
-    arguments are fixed here so the pipeline contract is already settled.
+    Every exit from this task goes through here, and a failure to write is
+    itself logged rather than raised: the work is already done, the vectors are
+    already in Qdrant, and re-running the whole ingestion because the status
+    write failed would repay minutes of OCR for a row update.
+
+    ``run_sync`` because the task is synchronous — Celery's prefork pool has no
+    event loop, and the service layer is async all the way down.
     """
+    from app.services.document_service import DocumentService
+
     logger.info(
         "document %s -> %s%s",
         document_id,
         status.value,
         f" ({failure_reason})" if failure_reason else "",
     )
+
+    service = DocumentService(get_settings())
+    document_uuid = uuid.UUID(document_id)
+    tenant_uuid = uuid.UUID(tenant_id)
+
+    async def _write() -> None:
+        if status is DocumentStatus.READY and result is not None:
+            await service.record_success(
+                tenant_id=tenant_uuid,
+                document_id=document_uuid,
+                chunk_count=result.chunk_count,
+                page_count=result.page_count,
+                language=result.language,
+                parse_strategy=result.parse_strategy,
+                text_extraction_ratio=result.text_extraction_ratio,
+                table_count=result.table_count,
+            )
+            return
+        await service.mark_status(
+            tenant_id=tenant_uuid,
+            document_id=document_uuid,
+            status=status,
+            # The CHECK constraint refuses a FAILED row with no reason, so a
+            # missing one is filled rather than allowed to abort the write and
+            # leave the document looking like it is still processing.
+            failure_reason=failure_reason
+            or (
+                "ingestion failed without a stated reason"
+                if status is DocumentStatus.FAILED
+                else None
+            ),
+        )
+
+    try:
+        run_sync(_write())
+    except Exception as exc:  # noqa: BLE001 - the outcome matters more than the write
+        logger.error("could not record %s for document %s: %s", status.value, document_id, exc)
