@@ -69,6 +69,44 @@ class QuotaExceededError(AppError):
     user_message = "Your plan's quota has been exhausted."
 
 
+# ---------------------------------------------------------------------- review
+class VersionConflictError(AppError):
+    """The row changed between the reviewer loading it and saving.
+
+    The review workbench is a stateless HTTP client: by the time an approval
+    arrives, the answer on the reviewer's screen may be several revisions old.
+    Applying the decision anyway would attach a human's sign-off to text they
+    never read, which is precisely the failure the approval gate exists to
+    prevent — so a stale version is refused, not merged.
+    """
+
+    slug = "version_conflict"
+    status_code = 409
+    user_message = "This answer changed since you opened it. Reload and review again."
+
+
+class InvalidTransitionError(AppError):
+    """The requested status is not reachable from the current one."""
+
+    slug = "invalid_transition"
+    status_code = 409
+    user_message = "That action is not available for this answer's current state."
+
+
+class UngroundedApprovalError(AppError):
+    """Approval refused: the answer carries no resolvable evidence.
+
+    The product's single hard promise is that nothing leaves the system without
+    a citation tied to a real source in the customer's own documents. An answer
+    with no citations can still be approved, but only by a reviewer who states
+    in writing that they are vouching for it themselves — never by default.
+    """
+
+    slug = "approval_blocked"
+    status_code = 422
+    user_message = "This answer has no citations and cannot be approved as grounded."
+
+
 # ------------------------------------------------------------------- upload
 class UnsupportedFormatError(AppError):
     """Content type is not on the allowlist, or the bytes contradict it."""

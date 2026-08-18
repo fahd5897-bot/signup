@@ -126,7 +126,12 @@ class Workspace(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin, SoftDele
     tenant: Mapped[Tenant] = relationship(back_populates="workspaces")
     owner: Mapped[User] = relationship(foreign_keys=[owner_id])
     documents: Mapped[list[Document]] = relationship(
-        back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        # See Document.workspace: the composite FK means both this and
+        # Document.tenant write tenant_id, always with the same value.
+        overlaps="tenant",
     )
     proposals: Mapped[list[GeneratedProposal]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True

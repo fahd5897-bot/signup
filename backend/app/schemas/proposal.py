@@ -105,6 +105,13 @@ class ProposalReviewAction(StrictModel):
     review_notes: str | None = Field(default=None, max_length=2000)
     assigned_sme_id: uuid.UUID | None = None
     expected_version: int = Field(ge=1)
+    #: Approve an answer that carries no citations. Off by default, and the
+    #: service refuses without it: the product's one hard promise is that
+    #: nothing ships without evidence from the customer's own documents. A
+    #: reviewer who wrote the answer themselves is a legitimate case, but it
+    #: must be distinguishable in the audit trail from a grounded answer, so it
+    #: costs a deliberate flag and a written note.
+    acknowledge_ungrounded: bool = False
 
     @model_validator(mode="after")
     def _validate_action(self) -> ProposalReviewAction:
@@ -120,6 +127,8 @@ class ProposalReviewAction(StrictModel):
             raise ValueError("assigned_sme_id is required when escalating to an SME")
         if self.action is ProposalStatus.REJECTED and not self.review_notes:
             raise ValueError("review_notes are required when rejecting")
+        if self.acknowledge_ungrounded and self.action is not ProposalStatus.APPROVED:
+            raise ValueError("acknowledge_ungrounded only applies to approval")
         return self
 
 

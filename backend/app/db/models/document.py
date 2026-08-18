@@ -134,7 +134,15 @@ class Document(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin, SoftDelet
 
     # ----------------------------------------------------------- relationships
     tenant: Mapped[Tenant] = relationship(back_populates="documents")
-    workspace: Mapped[Workspace | None] = relationship(back_populates="documents")
+    # ``overlaps`` silences the composite-foreign-key warning rather than
+    # changing behaviour: (tenant_id, workspace_id) references
+    # (workspaces.tenant_id, workspaces.id), so this relationship and
+    # ``tenant`` both write tenant_id. They can only ever write the same
+    # value — the FK exists precisely to make a cross-tenant pairing
+    # impossible — so the overlap is intended.
+    workspace: Mapped[Workspace | None] = relationship(
+        back_populates="documents", overlaps="tenant"
+    )
 
     @property
     def is_global_knowledge(self) -> bool:

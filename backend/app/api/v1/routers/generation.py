@@ -19,6 +19,7 @@ from app.db.models.enums import Language
 from app.rag.chains.answer_requirement import AnswerChain
 from app.schemas.base import APIModel
 from app.schemas.proposal import Citation, GenerationRequest, GroundingMetrics
+from app.services.generation_service import GenerationService
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,12 @@ class GeneratedAnswer(APIModel):
     prompt_version: str | None = None
     generation_ms: int | None = None
 
+    #: Set only when the answer was saved, which requires a workspace to save
+    #: it to. Without these the frontend has no handle to review or approve
+    #: with, so their absence is how it knows the result is ephemeral.
+    proposal_id: uuid.UUID | None = None
+    version: int | None = None
+
 
 @router.post(
     "/generate-answer",
@@ -69,6 +76,12 @@ async def generate_answer(
     * an abstention with a stated reason and no answer text, when the evidence
       does not support one.
 
+    With a ``workspace_id`` the result is persisted as a new version and can be
+    reviewed; without one it is a scratch query against the tenant's knowledge
+    base and nothing is stored. Neither path can produce an APPROVED answer:
+    the database CHECK constraint requires a named reviewer, so an accidental
+    auto-approval fails loudly instead of silently shipping unreviewed text.
+
     ``tenant_id`` comes from the bearer token. It is not accepted from the body,
     the query string, or a header — see ``app.api.v1.deps.auth``.
     """
@@ -79,16 +92,34 @@ async def generate_answer(
     # client would open a new connection pool on every question.
     qdrant = request.app.state.qdrant
     anthropic = getattr(request.app.state, "anthropic", None)
+    language = payload.language or Language(settings.default_locale)
 
-    chain = AnswerChain(qdrant, anthropic, settings)
-    result = await chain.run(
-        requirement_ref=payload.requirement_ref,
-        requirement_text=payload.requirement_text,
-        tenant_id=user.tenant_id,
-        workspace_id=workspace_id,
-        language=payload.language or Language(settings.default_locale),
-        style_hint=payload.style_hint,
-    )
+    proposal_id: uuid.UUID | None = None
+    version: int | None = None
+
+    if workspace_id is None:
+        chain = AnswerChain(qdrant, anthropic, settings)
+        result = await chain.run(
+            requirement_ref=payload.requirement_ref,
+            requirement_text=payload.requirement_text,
+            tenant_id=user.tenant_id,
+            workspace_id=None,
+            language=language,
+            style_hint=payload.style_hint,
+        )
+    else:
+        result, proposal = await GenerationService(qdrant, anthropic, settings).answer_and_save(
+            tenant_id=user.tenant_id,
+            workspace_id=workspace_id,
+            requirement_ref=payload.requirement_ref,
+            requirement_text=payload.requirement_text,
+            section_path=payload.section_path,
+            is_mandatory=payload.is_mandatory,
+            language=language,
+            style_hint=payload.style_hint,
+        )
+        proposal_id = proposal.id
+        version = proposal.version
 
     logger.info(
         "generated %s for tenant %s: status=%s verdict=%s citations=%d",
@@ -118,4 +149,6 @@ async def generate_answer(
         model_id=result.model_id,
         prompt_version=result.prompt_version,
         generation_ms=result.generation_ms,
+        proposal_id=proposal_id,
+        version=version,
     )

@@ -30,6 +30,71 @@ class ProposalRepository:
             )
         ).scalar_one_or_none()
 
+    async def get_by_id(self, proposal_id: uuid.UUID) -> GeneratedProposal | None:
+        """Load one proposal by primary key.
+
+        No tenant predicate: the session is already scoped by RLS, so a row
+        belonging to another tenant simply is not there. Adding a redundant
+        filter would create a second place tenant isolation could be wrong.
+        """
+        return (
+            await self._session.execute(
+                select(GeneratedProposal).where(
+                    GeneratedProposal.id == proposal_id,
+                    GeneratedProposal.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+
+    async def list_for_review(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        status: ProposalStatus | None = None,
+        assigned_sme_id: uuid.UUID | None = None,
+        mandatory_only: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[GeneratedProposal], int]:
+        """The review queue.
+
+        Ordered by requirement reference rather than by confidence: a reviewer
+        working a compliance matrix reads it in the tender's own order, and
+        re-sorting by model confidence makes it impossible to tell whether an
+        item was skipped.
+        """
+        conditions = [
+            GeneratedProposal.workspace_id == workspace_id,
+            GeneratedProposal.is_current.is_(True),
+            GeneratedProposal.deleted_at.is_(None),
+        ]
+        if status is not None:
+            conditions.append(GeneratedProposal.status == status)
+        if assigned_sme_id is not None:
+            conditions.append(GeneratedProposal.assigned_sme_id == assigned_sme_id)
+        if mandatory_only:
+            conditions.append(GeneratedProposal.is_mandatory.is_(True))
+
+        total = (
+            await self._session.execute(
+                select(func.count()).select_from(GeneratedProposal).where(*conditions)
+            )
+        ).scalar_one()
+        rows = (
+            (
+                await self._session.execute(
+                    select(GeneratedProposal)
+                    .where(*conditions)
+                    .order_by(GeneratedProposal.requirement_ref)
+                    .limit(limit)
+                    .offset(offset)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return list(rows), total
+
     async def save_generation(
         self,
         *,
@@ -194,9 +259,48 @@ class ProposalRepository:
         reviewer_id: uuid.UUID,
         status: ProposalStatus,
         notes: str | None = None,
+        assigned_sme_id: uuid.UUID | None = None,
     ) -> None:
+        """Record a review decision and advance the row revision.
+
+        ``version`` is the optimistic-lock column, and it is incremented here
+        rather than by SQLAlchemy because the mapper is configured with
+        ``version_id_generator=False``. Without the bump, two reviewers holding
+        the same revision would both pass their ``expected_version`` check and
+        the second decision would silently overwrite the first.
+        """
         proposal.status = status
         proposal.reviewed_by_id = reviewer_id
         proposal.reviewed_at = datetime.now(UTC)
+        proposal.version = proposal.version + 1
         if notes is not None:
             proposal.review_notes = notes
+        if assigned_sme_id is not None:
+            proposal.assigned_sme_id = assigned_sme_id
+        await self._session.flush()
+
+    async def apply_edit(
+        self,
+        proposal: GeneratedProposal,
+        *,
+        edited_text: str,
+        notes: str | None = None,
+        reset_status: ProposalStatus | None = None,
+    ) -> None:
+        """Store a reviewer's edit without touching the generated original.
+
+        ``answer_text`` is never overwritten: the human-vs-model delta is the
+        only honest quality metric this product has, and an in-place edit
+        destroys it. When the edit lands on an already-approved answer the
+        caller passes ``reset_status``, which clears the sign-off — otherwise a
+        reviewer's approval would silently carry over to text they never read.
+        """
+        proposal.edited_text = edited_text
+        proposal.version = proposal.version + 1
+        if notes is not None:
+            proposal.review_notes = notes
+        if reset_status is not None:
+            proposal.status = reset_status
+            proposal.reviewed_by_id = None
+            proposal.reviewed_at = None
+        await self._session.flush()
