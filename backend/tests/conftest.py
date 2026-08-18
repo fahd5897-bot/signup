@@ -12,7 +12,12 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test")
 os.environ.setdefault("VOYAGE_API_KEY", "pa-test")
 os.environ.setdefault("POSTGRES_DSN", "postgresql+asyncpg://test:test@localhost:5432/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
-os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault(
+    "JWT_SECRET",
+    # Must clear the 32-byte floor enforced by Settings; a fixed value keeps
+    # token fixtures reproducible across runs.
+    "test-secret-not-for-production-0123456789abcdef",
+)
 
 from app.core.config import get_settings  # noqa: E402
 from app.rag.vectorstore import QdrantCollectionManager  # noqa: E402

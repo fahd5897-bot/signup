@@ -13,8 +13,10 @@ import httpx
 import pytest
 from app.api.middleware.error_handler import register_exception_handlers
 from app.api.v1.routers import documents as documents_router
+from app.db.models.enums import DocumentStatus
 from app.security.tokens import issue_access_token
 from app.services import storage
+from app.services.document_service import RegisteredDocument
 from fastapi import FastAPI
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -33,13 +35,27 @@ def xlsx_bytes(tmp_path) -> bytes:
 
 @pytest.fixture
 def client(monkeypatch, settings) -> httpx.AsyncClient:
-    class _FakeStorage:
+    """Stub persistence, keep the request path real.
+
+    Everything these tests assert on — type, magic bytes, size, checksum, role
+    — is decided before a single byte is stored, so the fake keeps the suite
+    free of PostgreSQL and S3. It returns the production dataclass rather than
+    a look-alike, so a change to the service contract breaks the test instead
+    of quietly passing against a shape the app no longer produces.
+    """
+
+    class _FakeService:
         def __init__(self, *args, **kwargs) -> None: ...
 
-        def put(self, key, data, *, content_type):
-            return storage.StoredObject(key, len(data), storage.sha256_bytes(data))
+        async def register_upload(self, **kwargs) -> RegisteredDocument:
+            return RegisteredDocument(
+                document_id=uuid.uuid4(),
+                status=DocumentStatus.UPLOADED,
+                is_duplicate=False,
+                task_id="task-1",
+            )
 
-    monkeypatch.setattr(documents_router, "ObjectStorage", _FakeStorage)
+    monkeypatch.setattr(documents_router, "DocumentService", _FakeService)
 
     app = FastAPI()
     register_exception_handlers(app)

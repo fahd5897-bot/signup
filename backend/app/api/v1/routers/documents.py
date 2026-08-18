@@ -15,7 +15,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 
-from app.api.v1.deps.auth import CurrentUser, require_upload_permission
+from app.api.v1.deps.auth import (
+    CurrentUser,
+    get_current_user,
+    require_upload_permission,
+)
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
     ChecksumMismatchError,
@@ -23,9 +27,14 @@ from app.core.exceptions import (
     UnsupportedFormatError,
 )
 from app.db.models.enums import DocumentRole, DocumentStatus
-from app.schemas.common import TaskAccepted
-from app.schemas.document import ALLOWED_MIME_TYPES, DocumentStatusRead
-from app.services.storage import ObjectStorage, build_storage_key, sha256_bytes
+from app.schemas.common import Page, TaskAccepted
+from app.schemas.document import (
+    ALLOWED_MIME_TYPES,
+    DocumentRead,
+    DocumentStatusRead,
+)
+from app.services.document_service import DocumentService
+from app.services.storage import sha256_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +85,8 @@ async def upload_document(
     digest = sha256_bytes(data)
 
     if expected_sha256 and expected_sha256.lower() != digest:
-        # Truncated or tampered upload. Refusing here matters because a partial
-        # PDF frequently parses "successfully" into partial text, producing a
+        # Truncated or tampered upload. Refusing matters because a partial PDF
+        # frequently parses "successfully" into partial text, producing a
         # document that looks ingested but is missing content — and nothing
         # downstream can tell that it is incomplete.
         raise ChecksumMismatchError(
@@ -86,30 +95,62 @@ async def upload_document(
             actual=digest,
         )
 
-    document_id = uuid.uuid4()
-    key = build_storage_key(str(user.tenant_id), str(document_id), file.filename or "document")
-
-    ObjectStorage(settings).put(key, data, content_type=file.content_type or "")
-    logger.info(
-        "stored document %s for tenant %s (%d bytes, %s)",
-        document_id,
-        user.tenant_id,
-        len(data),
-        file.content_type,
+    registered = await DocumentService(settings).register_upload(
+        tenant_id=user.tenant_id,
+        data=data,
+        filename=file.filename or "document",
+        mime_type=file.content_type or "",
+        role=role,
+        workspace_id=workspace_id,
     )
 
-    # NOTE: the documents row is written and the Celery task enqueued by
-    # DocumentService within one transaction, so a row can never exist without
-    # queued work (a document stuck at UPLOADED forever) and work can never be
-    # queued for a row that does not exist. Wiring lands with the service layer
-    # in Phase 4; the contract is fixed here.
-    task_id = f"ingest:{document_id}"
+    logger.info(
+        "upload accepted: document=%s tenant=%s duplicate=%s",
+        registered.document_id,
+        user.tenant_id,
+        registered.is_duplicate,
+    )
 
     return TaskAccepted(
-        task_id=task_id,
-        resource_id=document_id,
-        status=DocumentStatus.UPLOADED.value,
-        poll_url=f"/api/v1/documents/{document_id}/status",
+        task_id=registered.task_id or f"reused:{registered.document_id}",
+        resource_id=registered.document_id,
+        status=registered.status.value,
+        poll_url=f"/api/v1/documents/{registered.document_id}/status",
+    )
+
+
+@router.get(
+    "/documents",
+    response_model=Page[DocumentRead],
+    summary="List the tenant's documents",
+)
+async def list_documents(
+    workspace_id: uuid.UUID | None = None,
+    role: DocumentRole | None = None,
+    status_filter: DocumentStatus | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    user: CurrentUser = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> Page[DocumentRead]:
+    """The knowledge-base table.
+
+    Scoped by RLS to the caller's tenant; no tenant filter is passed because
+    the session cannot see anything else.
+    """
+    documents, total = await DocumentService(settings).list_documents(
+        tenant_id=user.tenant_id,
+        workspace_id=workspace_id,
+        role=role,
+        status=status_filter,
+        limit=min(limit, 200),
+        offset=offset,
+    )
+    return Page[DocumentRead](
+        items=[DocumentRead.model_validate(d) for d in documents],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -120,14 +161,19 @@ async def upload_document(
 )
 async def get_document_status(
     document_id: uuid.UUID,
-    user: CurrentUser = Depends(require_upload_permission),
+    user: CurrentUser = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
 ) -> DocumentStatusRead:
     """Report ingestion state.
 
-    A row belonging to another tenant returns 404, not 403 — see
-    ``TenantMismatchError`` for why that distinction matters.
+    A row belonging to another tenant returns 404, not 403: under RLS it is
+    genuinely invisible, and a 403 would confirm the id exists — turning this
+    endpoint into an enumeration oracle across tenants.
     """
-    raise NotImplementedError("wired to DocumentService in Phase 4")
+    document = await DocumentService(settings).get_status(
+        tenant_id=user.tenant_id, document_id=document_id
+    )
+    return DocumentStatusRead.model_validate(document)
 
 
 # ----------------------------------------------------------------- internals

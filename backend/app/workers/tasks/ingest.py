@@ -59,9 +59,19 @@ def parse_document_task(
         logger.warning("could not fetch %s: %s", storage_key, exc)
         raise self.retry(exc=exc) from exc
 
+    async def _report(doc_id: uuid.UUID, stage: DocumentStatus) -> None:
+        """Surface the live stage so the UI shows "Parsing" rather than a
+        spinner that could mean anything for several minutes."""
+        from app.services.document_service import DocumentService
+
+        await DocumentService(settings).mark_status(
+            tenant_id=uuid.UUID(tenant_id), document_id=doc_id, status=stage
+        )
+
     try:
         result = asyncio.run(
             _run_pipeline(
+                status_callback=_report,
                 data=data,
                 document_id=uuid.UUID(document_id),
                 tenant_id=uuid.UUID(tenant_id),
@@ -75,11 +85,11 @@ def parse_document_task(
         # Soft limit fires first precisely so this branch can run and leave the
         # document in a terminal state; the hard limit kills the process.
         logger.error("ingestion of %s exceeded the time limit", document_id)
-        _persist(document_id, DocumentStatus.FAILED, "processing timed out")
+        _persist(document_id, tenant_id, DocumentStatus.FAILED, "processing timed out")
         raise exc
 
     if result.succeeded:
-        _persist(document_id, DocumentStatus.READY, None, result)
+        _persist(document_id, tenant_id, DocumentStatus.READY, None, result)
         return {"status": "ready", "chunks": result.chunk_count}
 
     if result.is_retryable and self.request.retries < settings.ingest_max_retries:
@@ -93,17 +103,17 @@ def parse_document_task(
 
     # Terminal: either non-retryable, or retries exhausted. Persisting the
     # reason is what turns a stuck spinner into an actionable message.
-    _persist(document_id, DocumentStatus.FAILED, result.failure_reason, result)
+    _persist(document_id, tenant_id, DocumentStatus.FAILED, result.failure_reason, result)
     return {"status": "failed", "reason": result.failure_reason, "slug": result.failure_slug}
 
 
-async def _run_pipeline(**kwargs) -> IngestionResult:
+async def _run_pipeline(status_callback=None, **kwargs) -> IngestionResult:
     from app.rag.vectorstore.collections import build_client
 
     settings = get_settings()
     client = await build_client(settings)
     try:
-        pipeline = IngestionPipeline(client, settings)
+        pipeline = IngestionPipeline(client, settings, status_callback=status_callback)
         return await pipeline.run(**kwargs)
     finally:
         await client.close()
