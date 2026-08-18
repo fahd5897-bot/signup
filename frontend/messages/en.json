@@ -1,0 +1,81 @@
+{
+  "nav": {
+    "knowledgeBase": "Knowledge Base",
+    "tenders": "Tenders",
+    "goNoGo": "Go/No-Go Analysis",
+    "settings": "Settings",
+    "workspace": "Workspace"
+  },
+  "knowledgeBase": {
+    "title": "Knowledge Base",
+    "subtitle": "Past proposals, specifications, and certifications. Every generated answer is grounded in these documents and nothing else.",
+    "dropTitle": "Drop files here",
+    "dropSubtitle": "or click to browse",
+    "dropFormats": "PDF, Word, Excel, PowerPoint, CSV — up to 200 MB",
+    "uploading": "Uploading",
+    "processing": "Processing",
+    "documents": "Documents",
+    "empty": "No documents yet. Upload your past proposals and specifications to get started.",
+    "emptyHint": "Answers can only cite what you have uploaded.",
+    "columns": {
+      "name": "Document",
+      "status": "Status",
+      "language": "Language",
+      "pages": "Pages",
+      "chunks": "Indexed",
+      "quality": "Text quality"
+    }
+  },
+  "status": {
+    "pending": "Pending",
+    "uploaded": "Queued",
+    "parsing": "Parsing",
+    "chunking": "Chunking",
+    "embedding": "Indexing",
+    "ready": "Ready",
+    "failed": "Failed",
+    "quarantined": "Blocked"
+  },
+  "quality": {
+    "good": "Good",
+    "degraded": "Degraded",
+    "poor": "Poor",
+    "unknown": "Unknown",
+    "degradedHint": "Some pages produced little text. Check the scan quality before relying on this document as evidence.",
+    "poorHint": "Very little text was extracted. This document should not be trusted as a source."
+  },
+  "workspace": {
+    "outline": "Document outline",
+    "questionnaire": "Questionnaire",
+    "autofill": "Auto-fill Questionnaire",
+    "autofilling": "Generating answers…",
+    "generate": "Generate",
+    "regenerate": "Regenerate",
+    "sources": "Sources",
+    "noAnswer": "Not answered yet",
+    "mandatory": "Mandatory",
+    "progress": "{approved} of {total} approved",
+    "approve": "Approve",
+    "reject": "Reject",
+    "edit": "Edit",
+    "exportBlocked": "Export is blocked until every mandatory requirement is approved.",
+    "page": "p.{page}"
+  },
+  "grounding": {
+    "verified": "Verified",
+    "partial": "Partially grounded",
+    "unverified": "Not grounded",
+    "not_applicable": "No answer",
+    "coverage": "{percent}% of statements cited",
+    "unsupportedTitle": "Statements without a source",
+    "unsupportedHint": "These sentences are not supported by any cited document. Verify or remove them before approving.",
+    "abstained": "The knowledge base does not contain an answer to this requirement.",
+    "confidence": "Confidence"
+  },
+  "common": {
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "close": "Close",
+    "of": "of"
+  }
+}
