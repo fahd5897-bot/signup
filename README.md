@@ -17,6 +17,11 @@ Arabic and English throughout.
 structure, the data flow from upload to approved answer, and the four
 fail-closed gates that implement the zero-hallucination constraint.
 
+## Trying it out
+
+There is no hosted URL — nothing is deployed yet. See **[QUICKSTART.md](./QUICKSTART.md)**
+to run it locally; the interface alone needs only Node and about two minutes.
+
 ## Local setup
 
 ```bash
